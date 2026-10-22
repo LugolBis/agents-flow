@@ -3,7 +3,10 @@
 //! the orchestrator has no tool and no capability; delegations target existing agents.
 
 use super::jsonc::{expand_str, load_jsonc, EnvMap};
-use super::models::*;
+use crate::config::agents::AgentsConfig;
+use crate::config::deployment::DeploymentConfig;
+use crate::config::permissions::PermissionsConfig;
+use crate::config::tools::{ToolsConfig, CAPABILITIES};
 use crate::error::{Error, Result};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -22,7 +25,7 @@ pub struct Settings {
 
 fn parse<T: serde::de::DeserializeOwned>(val: serde_json::Value, file: &str) -> Result<T> {
     serde_json::from_value(val)
-        .map_err(|err| Error::config(format!("configuration invalide ({file}) :\n{err}")))
+        .map_err(|err| Error::config(format!("invalid config ({file}) :\n{err}")))
 }
 
 impl Settings {
