@@ -33,7 +33,6 @@
     },
     // Mirror audit log on Windows side (reference log is written in WSL).
     "client_audit_path": "${AGENTS_FLOW_CLIENT_AUDIT_LOG:-./audit/client-audit.jsonl}",
-    // ----------------------------------------------------------------- LLM (LM Studio, Windows native)
     // CrewAI runs under Windows, so LM Studio is connected over loopback: no open network to WSL required.
     "llm": {
         "default": "lmstudio",
@@ -42,7 +41,7 @@
                 // EXACT ID displayed in LM Studio (GET http://127.0.0.1:1234/v1/models, or `agwo llm check`).
                 "model": "${LMSTUDIO_MODEL}",
                 "base_url": "${LMSTUDIO_BASE_URL:-http://127.0.0.1:1234/v1}",
-                "api_key": "lm-studio",
+                "api_key": "${LMSTUDIO_API_KEY:-your-api-key-generated-on-lm-studio}",
                 "temperature": 0.2,
                 "timeout_s": 300,
                 // Context length ACTUALLY loaded in LM Studio (Model settings → Context Length).
