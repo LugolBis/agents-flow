@@ -1,0 +1,239 @@
+// =============================================================================
+// tools.jsonc — registre DÉCLARATIF des outils.
+//
+// "class"        : classe Python (chargement restreint au préfixe agents_flow.tools.)
+// "capabilities" : capacités requises. DOIT être identique à la déclaration
+//                  `required_capabilities` de la classe (vérifié au démarrage :
+//                  une divergence est une erreur, jamais une élévation silencieuse).
+// "enabled"      : false = outil jamais instancié, même s'il est accordé.
+//
+// La config décrit ; le code Python (outils + security/*) applique.
+// =============================================================================
+{
+    "version": 1,
+    "tools": {
+        // ---- Système de fichiers
+        "read_file": {
+            "class": "agents_flow.tools.fs.ReadFileTool",
+            "capabilities": [
+                "fs.read"
+            ]
+        },
+        "list_dir": {
+            "class": "agents_flow.tools.fs.ListDirTool",
+            "capabilities": [
+                "fs.read"
+            ]
+        },
+        "search_in_files": {
+            "class": "agents_flow.tools.fs.SearchInFilesTool",
+            "capabilities": [
+                "fs.read"
+            ]
+        },
+        "create_file": {
+            "class": "agents_flow.tools.fs.CreateFileTool",
+            "capabilities": [
+                "fs.write"
+            ]
+        },
+        "modify_file": {
+            "class": "agents_flow.tools.fs.ModifyFileTool",
+            "capabilities": [
+                "fs.read",
+                "fs.write"
+            ]
+        },
+        "check_file_modifiable": {
+            "class": "agents_flow.tools.fs.CheckFileModifiableTool",
+            "capabilities": [
+                "fs.read"
+            ]
+        },
+        // ---- Git local : LECTURE
+        "git_info": {
+            "class": "agents_flow.tools.git_tools.GitInfoTool",
+            "capabilities": [
+                "git.read"
+            ]
+        },
+        "git_status": {
+            "class": "agents_flow.tools.git_tools.GitStatusTool",
+            "capabilities": [
+                "git.read"
+            ]
+        },
+        "git_log": {
+            "class": "agents_flow.tools.git_tools.GitLogTool",
+            "capabilities": [
+                "git.read"
+            ]
+        },
+        "git_diff": {
+            "class": "agents_flow.tools.git_tools.GitDiffTool",
+            "capabilities": [
+                "git.read"
+            ]
+        },
+        "git_show": {
+            "class": "agents_flow.tools.git_tools.GitShowTool",
+            "capabilities": [
+                "git.read"
+            ]
+        },
+        "git_show_file": {
+            "class": "agents_flow.tools.git_tools.GitShowFileTool",
+            "capabilities": [
+                "git.read"
+            ]
+        },
+        "git_ls_files": {
+            "class": "agents_flow.tools.git_tools.GitLsFilesTool",
+            "capabilities": [
+                "git.read"
+            ]
+        },
+        "git_branches": {
+            "class": "agents_flow.tools.git_tools.GitBranchesTool",
+            "capabilities": [
+                "git.read"
+            ]
+        },
+        // ---- Git local : ÉCRITURE (exactement 3 opérations)
+        "git_create_branch": {
+            "class": "agents_flow.tools.git_tools.GitCreateBranchTool",
+            "capabilities": [
+                "git.write_local"
+            ]
+        },
+        "git_switch_branch": {
+            "class": "agents_flow.tools.git_tools.GitSwitchBranchTool",
+            "capabilities": [
+                "git.write_local"
+            ]
+        },
+        "git_commit": {
+            "class": "agents_flow.tools.git_tools.GitCommitTool",
+            "capabilities": [
+                "git.write_local"
+            ]
+        },
+        // ---- GitHub distant : LECTURE SEULE (GET uniquement, hôte api.github.com)
+        "github_get_repo": {
+            "class": "agents_flow.tools.github.GitHubGetRepoTool",
+            "capabilities": [
+                "github.read"
+            ]
+        },
+        "github_list_tree": {
+            "class": "agents_flow.tools.github.GitHubListTreeTool",
+            "capabilities": [
+                "github.read"
+            ]
+        },
+        "github_get_file": {
+            "class": "agents_flow.tools.github.GitHubGetFileTool",
+            "capabilities": [
+                "github.read"
+            ]
+        },
+        "github_list_commits": {
+            "class": "agents_flow.tools.github.GitHubListCommitsTool",
+            "capabilities": [
+                "github.read"
+            ]
+        },
+        "github_list_issues": {
+            "class": "agents_flow.tools.github.GitHubListIssuesTool",
+            "capabilities": [
+                "github.read"
+            ]
+        },
+        "github_list_pulls": {
+            "class": "agents_flow.tools.github.GitHubListPullsTool",
+            "capabilities": [
+                "github.read"
+            ]
+        },
+        // ---- Shell : inspection par liste blanche (jamais de shell arbitraire)
+        "shell_inspect": {
+            "class": "agents_flow.tools.shell.ShellInspectTool",
+            "capabilities": [
+                "shell.inspect"
+            ]
+        },
+        // ---- Web
+        "web_search": {
+            "class": "agents_flow.tools.web.WebSearchTool",
+            "capabilities": [
+                "net.read"
+            ]
+        },
+        "fetch_page": {
+            "class": "agents_flow.tools.web.FetchPageTool",
+            "capabilities": [
+                "net.read"
+            ]
+        },
+        "extract_links": {
+            "class": "agents_flow.tools.web.ExtractLinksTool",
+            "capabilities": [
+                "net.read"
+            ]
+        },
+        "crawl_site": {
+            "class": "agents_flow.tools.web.CrawlSiteTool",
+            "capabilities": [
+                "net.read"
+            ]
+        },
+        // Nécessite `pip install .[browser]` + `playwright install chromium`. Non testé ici.
+        "browser_fetch": {
+            "class": "agents_flow.tools.web.BrowserFetchTool",
+            "capabilities": [
+                "net.read"
+            ],
+            "enabled": false
+        },
+        // ---- Documents
+        "read_document": {
+            "class": "agents_flow.tools.documents.ReadDocumentTool",
+            "capabilities": [
+                "fs.read"
+            ]
+        },
+        "search_in_document": {
+            "class": "agents_flow.tools.documents.SearchInDocumentTool",
+            "capabilities": [
+                "fs.read"
+            ]
+        },
+        "compare_documents": {
+            "class": "agents_flow.tools.documents.CompareDocumentsTool",
+            "capabilities": [
+                "fs.read"
+            ]
+        },
+        // ---- Projet (analyse statique, aucune exécution de code du projet)
+        "scan_project": {
+            "class": "agents_flow.tools.project.ScanProjectTool",
+            "capabilities": [
+                "fs.read"
+            ]
+        },
+        "python_import_graph": {
+            "class": "agents_flow.tools.project.PythonImportGraphTool",
+            "capabilities": [
+                "fs.read"
+            ]
+        },
+        // ---- Exécution de tests : DÉSACTIVÉ par défaut (exécute le code du projet)
+        "run_tests": {
+            "class": "agents_flow.tools.tests_runner.RunTestsTool",
+            "capabilities": [
+                "exec.tests"
+            ],
+            "enabled": false
+        }
+    }
+}

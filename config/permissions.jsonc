@@ -1,0 +1,378 @@
+// =============================================================================
+// permissions.jsonc — SOURCE UNIQUE des permissions.
+//
+// Rien ici n'est une « consigne au LLM » : ces règles sont lues par le code
+// Python des outils (src/agents_flow/security/*) qui les applique de façon
+// déterministe, quelles que soient les instructions données à un agent.
+// Toute clé inconnue ou incohérence fait échouer le démarrage (fail closed).
+// =============================================================================
+{
+    "version": 1,
+    // ---------------------------------------------------------------- Fichiers
+    "fs": {
+        "roots": [
+            // Périmètre de travail. Le premier est la racine par défaut des chemins
+            // relatifs. "write": true = écriture possible (sous conditions Git).
+            // Chemin LINUX (WSL). Jamais sous /mnt/c : refusé au démarrage (fs.allow_windows_drives=false).
+            {
+                "name": "workspace",
+                "path": "${AGENTS_FLOW_WORKSPACE:-~/workspace}",
+                "write": true
+            }
+            // Exemple de racine en lecture seule :
+            // { "name": "reference", "path": "/srv/reference-docs", "write": false }
+        ],
+        // Interdits en lecture ET en écriture. Sans « / » : nom à toute profondeur.
+        "deny_globs": [
+            ".env",
+            ".env.*",
+            "*.pem",
+            "*.key",
+            "*.p12",
+            "*.pfx",
+            "*.kdbx",
+            "id_rsa*",
+            "id_ed25519*",
+            "id_ecdsa*",
+            ".netrc",
+            ".npmrc",
+            ".pypirc",
+            ".git-credentials",
+            "credentials",
+            "credentials.*",
+            "secrets",
+            "secrets.*",
+            ".aws",
+            ".ssh",
+            ".gnupg"
+        ],
+        // Exceptions aux motifs ci-dessus (fichiers d'exemple sans secret).
+        "deny_exceptions": [
+            ".env.example",
+            ".env.sample",
+            ".env.template"
+        ],
+        // Lisibles mais JAMAIS modifiables par un agent (vecteurs d'exécution de code).
+        "write_deny_globs": [
+            ".github/workflows/**",
+            ".gitattributes",
+            ".gitmodules",
+            ".husky/**"
+        ],
+        "max_read_bytes": 2000000,
+        "max_write_bytes": 1000000,
+        "max_list_entries": 500,
+        "allow_windows_drives": false // /mnt/c, /mnt/d… : sortie du bac à sable WSL, refusés comme racines
+    },
+    // --------------------------------------------------------------------- Git
+    "git": {
+        "author_name": "agwo-agent",
+        "author_email": "agent@agwo.invalid",
+        // Commit direct interdit sur ces branches : l'agent doit créer une branche.
+        "protected_branches": [
+            "main",
+            "master"
+        ],
+        "max_commit_files": 50,
+        "timeout_s": 20,
+        "max_output_bytes": 200000,
+        "github": {
+            "api_base": "https://api.github.com",
+            // NOM de la variable (jamais la valeur). Jeton fine-grained en LECTURE SEULE.
+            "token_env": "GITHUB_READ_TOKEN",
+            "timeout_s": 15,
+            "max_bytes": 1000000
+        }
+    },
+    // ------------------------------------------------------------------- Shell
+    "shell": {
+        // On ne peut que RÉDUIRE cette liste : "rm" ici ferait échouer le démarrage.
+        "enabled_commands": [
+            "pwd",
+            "ls",
+            "find",
+            "cat",
+            "head",
+            "tail",
+            "file",
+            "stat",
+            "git"
+        ],
+        "trusted_path_dirs": [
+            "/usr/bin",
+            "/bin"
+        ],
+        "timeout_s": 10,
+        "max_output_bytes": 100000,
+        "cpu_seconds": 10,
+        "memory_mb": 2048,
+        "find_max_depth": 6,
+        "max_path_args": 10,
+        "max_line_count": 2000
+    },
+    // ------------------------------------------------------------------ Réseau
+    "network": {
+        "allow_domains": [], // vide = tout domaine PUBLIC ; sinon liste blanche
+        "deny_domains": [],
+        "allowed_ports": [
+            80,
+            443
+        ],
+        "max_redirects": 3,
+        "max_bytes": 2000000,
+        "timeout_s": 15,
+        "respect_robots": true,
+        "min_interval_s": 1.0, // débit minimal entre deux requêtes vers un même hôte
+        "user_agent": "agwo-research/0.1 (+respects robots.txt)",
+        "max_crawl_pages": 10,
+        "max_crawl_depth": 2,
+        // "none" | "brave" | "searxng". Avec SearXNG (déployé dans WSL par scripts/wsl/searxng.sh) : mettre
+        // AGENTS_FLOW_SEARCH_PROVIDER=searxng dans le fichier d'environnement WSL (~/.config/agwo/env).
+        "search_provider": "${AGENTS_FLOW_SEARCH_PROVIDER:-none}",
+        "search_base_url": "${AGENTS_FLOW_SEARXNG_URL:-http://127.0.0.1:8888}", // joint DEPUIS WSL : loopback
+        "search_api_key_env": "BRAVE_API_KEY"
+    },
+    // --------------------------------------------------------------- Documents
+    "documents": {
+        "max_file_mb": 25,
+        "max_pages": 200,
+        "max_chars": 200000,
+        "max_zip_uncompressed_mb": 200,
+        "max_image_pixels": 50000000,
+        "ocr_enabled": false // true : nécessite `pip install .[ocr]` + binaire tesseract
+    },
+    // ------------------------------------------------------ Exécution de tests
+    // Exécuter les tests d'un projet = exécuter SON code. Désactivé par défaut ;
+    // à n'activer que dans un conteneur/sandbox (voir docs/SECURITY.md).
+    "test_runner": {
+        "enabled": false,
+        "argv": [],
+        "timeout_s": 300,
+        "max_output_bytes": 200000
+    },
+    "audit": {
+        // Journal de RÉFÉRENCE, écrit côté WSL, hors de tout périmètre d'agent (vérifié au démarrage).
+        "path": "${AGENTS_FLOW_AUDIT_LOG:-~/.local/state/agwo/audit.jsonl}",
+        "max_field_chars": 300
+    },
+    // ------------------------------------------------------ Permissions d'agents
+    // Un agent reçoit un outil SEULEMENT si (1) il figure dans "tools", (2) il n'est
+    // pas dans "deny_tools" et (3) l'agent possède TOUTES les capacités de l'outil
+    // (déclarées dans tools.jsonc). Vérifié au démarrage ET à chaque appel d'outil.
+    "agents": {
+        "orchestrator": {
+            // Planifie et délègue : aucun outil, aucune capacité.
+            "tools": [],
+            "deny_tools": [],
+            "capabilities": [],
+            "can_delegate_to": [
+                "web_researcher",
+                "document_analyst",
+                "git_repo_manager",
+                "file_editor",
+                "shell_inspector",
+                "developer",
+                "translator_fr_en",
+                "doc_writer",
+                "architecture_explorer"
+            ]
+        },
+        "web_researcher": {
+            "capabilities": [
+                "net.read"
+            ],
+            "tools": [
+                "web_search",
+                "fetch_page",
+                "extract_links",
+                "crawl_site",
+                "browser_fetch"
+            ],
+            "deny_tools": [
+                "shell_inspect",
+                "create_file",
+                "modify_file",
+                "git_commit",
+                "git_create_branch",
+                "git_switch_branch",
+                "run_tests"
+            ],
+            "can_delegate_to": []
+        },
+        "document_analyst": {
+            "capabilities": [
+                "fs.read"
+            ],
+            "tools": [
+                "read_document",
+                "search_in_document",
+                "compare_documents",
+                "list_dir"
+            ],
+            "deny_tools": [
+                "create_file",
+                "modify_file",
+                "shell_inspect",
+                "fetch_page",
+                "git_commit"
+            ],
+            "can_delegate_to": []
+        },
+        "git_repo_manager": {
+            "capabilities": [
+                "git.read",
+                "github.read",
+                "git.write_local"
+            ],
+            "tools": [
+                "git_info",
+                "git_status",
+                "git_log",
+                "git_diff",
+                "git_show",
+                "git_show_file",
+                "git_ls_files",
+                "git_branches",
+                "github_get_repo",
+                "github_list_tree",
+                "github_get_file",
+                "github_list_commits",
+                "github_list_issues",
+                "github_list_pulls",
+                "git_create_branch",
+                "git_switch_branch",
+                "git_commit"
+            ],
+            "deny_tools": [
+                "create_file",
+                "modify_file",
+                "shell_inspect",
+                "fetch_page",
+                "run_tests"
+            ],
+            "can_delegate_to": []
+        },
+        "file_editor": {
+            "capabilities": [
+                "fs.read",
+                "fs.write"
+            ],
+            "tools": [
+                "read_file",
+                "list_dir",
+                "create_file",
+                "modify_file",
+                "check_file_modifiable"
+            ],
+            "deny_tools": [
+                "shell_inspect",
+                "git_commit",
+                "git_create_branch",
+                "fetch_page",
+                "run_tests"
+            ],
+            "can_delegate_to": []
+        },
+        "shell_inspector": {
+            // Permissions shell INDÉPENDANTES de celles du développeur.
+            "capabilities": [
+                "shell.inspect"
+            ],
+            "tools": [
+                "shell_inspect"
+            ],
+            "deny_tools": [
+                "create_file",
+                "modify_file",
+                "git_commit",
+                "fetch_page",
+                "run_tests"
+            ],
+            "can_delegate_to": []
+        },
+        "developer": {
+            "capabilities": [
+                "fs.read",
+                "fs.write",
+                "exec.tests"
+            ],
+            "tools": [
+                "read_file",
+                "list_dir",
+                "search_in_files",
+                "create_file",
+                "modify_file",
+                "check_file_modifiable",
+                "run_tests"
+            ],
+            "deny_tools": [
+                "shell_inspect",
+                "git_commit",
+                "git_create_branch",
+                "git_switch_branch",
+                "fetch_page",
+                "web_search"
+            ],
+            "can_delegate_to": []
+        },
+        "translator_fr_en": {
+            "capabilities": [
+                "fs.read"
+            ],
+            "tools": [
+                "read_file"
+            ],
+            "deny_tools": [
+                "create_file",
+                "modify_file",
+                "shell_inspect",
+                "fetch_page",
+                "git_commit"
+            ],
+            "can_delegate_to": []
+        },
+        "doc_writer": {
+            "capabilities": [
+                "fs.read",
+                "fs.write"
+            ],
+            "tools": [
+                "read_file",
+                "list_dir",
+                "search_in_files",
+                "scan_project",
+                "create_file",
+                "modify_file",
+                "check_file_modifiable"
+            ],
+            "deny_tools": [
+                "shell_inspect",
+                "git_commit",
+                "fetch_page",
+                "run_tests"
+            ],
+            "can_delegate_to": []
+        },
+        "architecture_explorer": {
+            "capabilities": [
+                "fs.read"
+            ],
+            "tools": [
+                "list_dir",
+                "read_file",
+                "search_in_files",
+                "scan_project",
+                "python_import_graph"
+            ],
+            "deny_tools": [
+                "create_file",
+                "modify_file",
+                "shell_inspect",
+                "git_commit",
+                "fetch_page",
+                "run_tests"
+            ],
+            "can_delegate_to": []
+        }
+    }
+}
