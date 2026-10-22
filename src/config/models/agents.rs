@@ -1,13 +1,18 @@
 use crate::config::models::core::OMap;
-use crate::config::models::helpers::{bad, between, ge, lit, one};
+use crate::config::models::helpers::{
+    bad, between, deserialize_from_string_or_number, ge, lit, one,
+};
 use crate::error::Result;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct AgentLimits {
+    #[serde(deserialize_with = "deserialize_from_string_or_number")]
     pub max_iter: u32,
+    #[serde(deserialize_with = "deserialize_from_string_or_number")]
     pub max_execution_time: u64,
+    #[serde(deserialize_with = "deserialize_from_string_or_number")]
     pub max_retry_limit: u32,
     pub max_rpm: Option<u32>,
 }
@@ -78,9 +83,13 @@ pub struct AgentSpec {
 #[serde(deny_unknown_fields, default)]
 pub struct OrchestrationCfg {
     pub default_mode: String,
+    #[serde(deserialize_with = "deserialize_from_string_or_number")]
     pub max_steps: usize,
+    #[serde(deserialize_with = "deserialize_from_string_or_number")]
     pub max_replans: u32,
+    #[serde(deserialize_with = "deserialize_from_string_or_number")]
     pub max_retries_per_step: u32,
+    #[serde(deserialize_with = "deserialize_from_string_or_number")]
     pub max_instruction_chars: usize,
 }
 
@@ -126,7 +135,10 @@ fn default_llm() -> String {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentsConfig {
-    #[serde(default = "one")]
+    #[serde(
+        default = "one",
+        deserialize_with = "deserialize_from_string_or_number"
+    )]
     pub version: u32,
     #[serde(default = "default_llm")]
     pub default_llm: String,
