@@ -1,18 +1,18 @@
 // =============================================================================
-// tools.jsonc — registre DÉCLARATIF des outils.
+// tools.jsonc — DECLARATIVE tools registry.
 //
-// "class"        : classe Python (chargement restreint au préfixe agents_flow.tools.)
-// "capabilities" : capacités requises. DOIT être identique à la déclaration
-//                  `required_capabilities` de la classe (vérifié au démarrage :
-//                  une divergence est une erreur, jamais une élévation silencieuse).
-// "enabled"      : false = outil jamais instancié, même s'il est accordé.
+// "class"        : Python class (restricted loading under prefix agents_flow.tools.)
+// "capabilities" : required capabilities. MUST match class declaration
+//                  `required_capabilities` (verified at startup: divergence is an
+//                  error, never a silent privilege escalation).
+// "enabled"      : false = tool never instantiated, even if granted.
 //
-// La config décrit ; le code Python (outils + security/*) applique.
+// Config describes; Python code (tools + security/*) enforces.
 // =============================================================================
 {
     "version": 1,
     "tools": {
-        // ---- Système de fichiers
+        // ---- File system
         "read_file": {
             "class": "agents_flow.tools.fs.ReadFileTool",
             "capabilities": [
@@ -50,7 +50,7 @@
                 "fs.read"
             ]
         },
-        // ---- Git local : LECTURE
+        // ---- Local Git: READ
         "git_info": {
             "class": "agents_flow.tools.git_tools.GitInfoTool",
             "capabilities": [
@@ -99,7 +99,7 @@
                 "git.read"
             ]
         },
-        // ---- Git local : ÉCRITURE (exactement 3 opérations)
+        // ---- Local Git: WRITE (exactly 3 operations)
         "git_create_branch": {
             "class": "agents_flow.tools.git_tools.GitCreateBranchTool",
             "capabilities": [
@@ -118,7 +118,7 @@
                 "git.write_local"
             ]
         },
-        // ---- GitHub distant : LECTURE SEULE (GET uniquement, hôte api.github.com)
+        // ---- Remote GitHub: READ ONLY (GET only, api.github.com host)
         "github_get_repo": {
             "class": "agents_flow.tools.github.GitHubGetRepoTool",
             "capabilities": [
@@ -155,7 +155,7 @@
                 "github.read"
             ]
         },
-        // ---- Shell : inspection par liste blanche (jamais de shell arbitraire)
+        // ---- Shell: allowlist inspection (never arbitrary shell execution)
         "shell_inspect": {
             "class": "agents_flow.tools.shell.ShellInspectTool",
             "capabilities": [
@@ -187,7 +187,7 @@
                 "net.read"
             ]
         },
-        // Nécessite `pip install .[browser]` + `playwright install chromium`. Non testé ici.
+        // Requires `pip install .[browser]` + `playwright install chromium`. Untested here.
         "browser_fetch": {
             "class": "agents_flow.tools.web.BrowserFetchTool",
             "capabilities": [
@@ -214,7 +214,7 @@
                 "fs.read"
             ]
         },
-        // ---- Projet (analyse statique, aucune exécution de code du projet)
+        // ---- Project (static analysis, no execution of project code)
         "scan_project": {
             "class": "agents_flow.tools.project.ScanProjectTool",
             "capabilities": [
@@ -227,7 +227,7 @@
                 "fs.read"
             ]
         },
-        // ---- Exécution de tests : DÉSACTIVÉ par défaut (exécute le code du projet)
+        // ---- Test execution: DISABLED by default (executes project code)
         "run_tests": {
             "class": "agents_flow.tools.tests_runner.RunTestsTool",
             "capabilities": [

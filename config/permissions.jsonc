@@ -1,28 +1,27 @@
 // =============================================================================
-// permissions.jsonc — SOURCE UNIQUE des permissions.
+// permissions.jsonc — SINGLE SOURCE of permissions.
 //
-// Rien ici n'est une « consigne au LLM » : ces règles sont lues par le code
-// Python des outils (src/agents_flow/security/*) qui les applique de façon
-// déterministe, quelles que soient les instructions données à un agent.
-// Toute clé inconnue ou incohérence fait échouer le démarrage (fail closed).
+// Nothing here is an "LLM instruction": these rules are read by Python code
+// in tools (src/agents_flow/security/*) which enforces them deterministically,
+// regardless of agent prompts. Any unknown key or inconsistency fails startup (fail closed).
 // =============================================================================
 {
     "version": 1,
-    // ---------------------------------------------------------------- Fichiers
+    // ---------------------------------------------------------------- Files
     "fs": {
         "roots": [
-            // Périmètre de travail. Le premier est la racine par défaut des chemins
-            // relatifs. "write": true = écriture possible (sous conditions Git).
-            // Chemin LINUX (WSL). Jamais sous /mnt/c : refusé au démarrage (fs.allow_windows_drives=false).
+            // Working scope. First entry is default root for relative paths.
+            // "write": true = writing allowed (under Git conditions).
+            // LINUX path (WSL). Never under /mnt/c: rejected on startup (fs.allow_windows_drives=false).
             {
                 "name": "workspace",
                 "path": "${AGENTS_FLOW_WORKSPACE:-~/workspace}",
                 "write": true
             }
-            // Exemple de racine en lecture seule :
+            // Example of read-only root:
             // { "name": "reference", "path": "/srv/reference-docs", "write": false }
         ],
-        // Interdits en lecture ET en écriture. Sans « / » : nom à toute profondeur.
+        // Denied for read AND write. Without '/': filename matching any depth.
         "deny_globs": [
             ".env",
             ".env.*",
@@ -46,13 +45,13 @@
             ".ssh",
             ".gnupg"
         ],
-        // Exceptions aux motifs ci-dessus (fichiers d'exemple sans secret).
+        // Exceptions to deny pattern (example files with no secrets).
         "deny_exceptions": [
             ".env.example",
             ".env.sample",
             ".env.template"
         ],
-        // Lisibles mais JAMAIS modifiables par un agent (vecteurs d'exécution de code).
+        // Readable but NEVER writable by an agent (code execution vectors).
         "write_deny_globs": [
             ".github/workflows/**",
             ".gitattributes",
@@ -62,13 +61,13 @@
         "max_read_bytes": 2000000,
         "max_write_bytes": 1000000,
         "max_list_entries": 500,
-        "allow_windows_drives": false // /mnt/c, /mnt/d… : sortie du bac à sable WSL, refusés comme racines
+        "allow_windows_drives": false // /mnt/c, /mnt/d… : escaped WSL sandbox, rejected as roots
     },
     // --------------------------------------------------------------------- Git
     "git": {
         "author_name": "agwo-agent",
         "author_email": "agent@agwo.invalid",
-        // Commit direct interdit sur ces branches : l'agent doit créer une branche.
+        // Direct commit forbidden on protected branches: agent must create a new branch.
         "protected_branches": [
             "main",
             "master"
@@ -78,7 +77,7 @@
         "max_output_bytes": 200000,
         "github": {
             "api_base": "https://api.github.com",
-            // NOM de la variable (jamais la valeur). Jeton fine-grained en LECTURE SEULE.
+            // Env var NAME (never the raw token value). Fine-grained READ-ONLY token.
             "token_env": "GITHUB_READ_TOKEN",
             "timeout_s": 15,
             "max_bytes": 1000000
@@ -86,7 +85,7 @@
     },
     // ------------------------------------------------------------------- Shell
     "shell": {
-        // On ne peut que RÉDUIRE cette liste : "rm" ici ferait échouer le démarrage.
+        // Can only REDUCE this list: adding "rm" here fails startup.
         "enabled_commands": [
             "pwd",
             "ls",
@@ -110,9 +109,9 @@
         "max_path_args": 10,
         "max_line_count": 2000
     },
-    // ------------------------------------------------------------------ Réseau
+    // ------------------------------------------------------------------ Network
     "network": {
-        "allow_domains": [], // vide = tout domaine PUBLIC ; sinon liste blanche
+        "allow_domains": [], // empty = all PUBLIC domains; otherwise whitelist
         "deny_domains": [],
         "allowed_ports": [
             80,
@@ -122,14 +121,14 @@
         "max_bytes": 2000000,
         "timeout_s": 15,
         "respect_robots": true,
-        "min_interval_s": 1.0, // débit minimal entre deux requêtes vers un même hôte
+        "min_interval_s": 1.0, // min interval between two requests to same host
         "user_agent": "agwo-research/0.1 (+respects robots.txt)",
         "max_crawl_pages": 10,
         "max_crawl_depth": 2,
-        // "none" | "brave" | "searxng". Avec SearXNG (déployé dans WSL par scripts/wsl/searxng.sh) : mettre
-        // AGENTS_FLOW_SEARCH_PROVIDER=searxng dans le fichier d'environnement WSL (~/.config/agwo/env).
+        // "none" | "brave" | "searxng". With SearXNG (deployed in WSL via scripts/wsl/searxng.sh): set
+        // AGENTS_FLOW_SEARCH_PROVIDER=searxng in WSL env (~/.config/agwo/env).
         "search_provider": "${AGENTS_FLOW_SEARCH_PROVIDER:-none}",
-        "search_base_url": "${AGENTS_FLOW_SEARXNG_URL:-http://127.0.0.1:8888}", // joint DEPUIS WSL : loopback
+        "search_base_url": "${AGENTS_FLOW_SEARXNG_URL:-http://127.0.0.1:8888}", // accessed FROM WSL: loopback
         "search_api_key_env": "BRAVE_API_KEY"
     },
     // --------------------------------------------------------------- Documents
@@ -139,11 +138,11 @@
         "max_chars": 200000,
         "max_zip_uncompressed_mb": 200,
         "max_image_pixels": 50000000,
-        "ocr_enabled": false // true : nécessite `pip install .[ocr]` + binaire tesseract
+        "ocr_enabled": false // true: requires `pip install .[ocr]` + tesseract binary
     },
-    // ------------------------------------------------------ Exécution de tests
-    // Exécuter les tests d'un projet = exécuter SON code. Désactivé par défaut ;
-    // à n'activer que dans un conteneur/sandbox (voir docs/SECURITY.md).
+    // ------------------------------------------------------ Test Execution
+    // Running project tests = executing ITS code. Disabled by default;
+    // enable only inside a container/sandbox (see docs/SECURITY.md).
     "test_runner": {
         "enabled": false,
         "argv": [],
@@ -151,17 +150,17 @@
         "max_output_bytes": 200000
     },
     "audit": {
-        // Journal de RÉFÉRENCE, écrit côté WSL, hors de tout périmètre d'agent (vérifié au démarrage).
+        // REFERENCE audit log, written WSL side, outside any agent sandbox (verified at startup).
         "path": "${AGENTS_FLOW_AUDIT_LOG:-~/.local/state/agwo/audit.jsonl}",
         "max_field_chars": 300
     },
-    // ------------------------------------------------------ Permissions d'agents
-    // Un agent reçoit un outil SEULEMENT si (1) il figure dans "tools", (2) il n'est
-    // pas dans "deny_tools" et (3) l'agent possède TOUTES les capacités de l'outil
-    // (déclarées dans tools.jsonc). Vérifié au démarrage ET à chaque appel d'outil.
+    // ------------------------------------------------------ Agent Permissions
+    // An agent receives a tool ONLY if (1) present in "tools", (2) not in "deny_tools",
+    // and (3) agent holds ALL capabilities required by the tool (declared in tools.jsonc).
+    // Checked at startup AND on every tool invocation.
     "agents": {
         "orchestrator": {
-            // Planifie et délègue : aucun outil, aucune capacité.
+            // Plans and delegates: no tools, no capabilities.
             "tools": [],
             "deny_tools": [],
             "capabilities": [],
@@ -274,7 +273,7 @@
             "can_delegate_to": []
         },
         "shell_inspector": {
-            // Permissions shell INDÉPENDANTES de celles du développeur.
+            // Shell permissions INDEPENDENT of developer permissions.
             "capabilities": [
                 "shell.inspect"
             ],

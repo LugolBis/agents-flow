@@ -1,54 +1,54 @@
 // =============================================================================
-// deployment.jsonc — OÙ tourne quoi. (Hors empreinte de politique : voir remote/config_hash.py.)
+// deployment.jsonc — WHERE things run. (Outside policy footprint: see remote/config_hash.py.)
 //
-//   Windows 11 ARM64 : Python/uv + CrewAI + la boucle des agents + LM Studio (natif Windows)
-//   WSL (Linux)      : TOUS les outils (fichiers, Git, shell, web, documents), l'exécuteur, SearXNG
+//   Windows 11 ARM64 : Python/uv + CrewAI + agent loop + LM Studio (Windows native)
+//   WSL (Linux)      : ALL tools (files, Git, shell, web, docs), runner, SearXNG
 //
-// Les outils s'exécutent dans WSL parce que les garde-fous valident chemins, liens symboliques, inodes et
-// état Git SUR LE SYSTÈME DE FICHIERS QU'ILS PROTÈGENT. Depuis Windows (chemins UNC \\wsl$), ces garanties
-// ne tiendraient pas ; et un simple préfixe `wsl --` devant une chaîne de commande la ferait réinterpréter
-// par le shell Linux. Voir docs/WINDOWS-WSL.md.
+// Tools execute in WSL because guardrails validate paths, symlinks, inodes, and
+// Git status ON THE FILE SYSTEM THEY PROTECT. From Windows (UNC paths \\wsl$), these guarantees
+// would not hold; and a simple `wsl --` prefix in front of a command string would cause reinterpretation
+// by the Linux shell. See docs/WINDOWS-WSL.md.
 // =============================================================================
 {
     "version": 1,
-    // "wsl"   : CrewAI sous Windows, outils dans WSL (déploiement cible)
-    // "local" : tout dans CE processus (à utiliser DANS WSL/Linux, pour le développement et les tests)
+    // "wsl"   : CrewAI under Windows, tools inside WSL (target deployment)
+    // "local" : everything in THIS process (for development and tests INSIDE WSL/Linux)
     "backend": "wsl",
     "wsl": {
         "exe": "${AGENTS_FLOW_WSL_EXE:-wsl.exe}",
-        // Nom exact : `wsl -l -q`. Une distribution DÉDIÉE aux agents est recommandée (docs/WINDOWS-WSL.md).
+        // Exact name: `wsl -l -q`. A DEDICATED distribution for agents is recommended (docs/WINDOWS-WSL.md).
         "distro": "${AGENTS_FLOW_WSL_DISTRO:-Ubuntu-24.04}",
-        "user": null, // utilisateur Linux non-root ; null = utilisateur par défaut de la distribution
-        // Préfixe automatique de TOUTE commande lancée dans WSL :
-        //   auto            -> `wsl.exe -d <distro> --cd ~ --shell-type none -- …`, sinon `--exec` (WSL ancien)
+        "user": null, // non-root Linux user; null = distribution default user
+        // Automatic prefix for EVERY command executed inside WSL:
+        //   auto            -> `wsl.exe -d <distro> --cd ~ --shell-type none -- …`, otherwise `--exec` (legacy WSL)
         //   shell-type-none -> force `--shell-type none --`
         //   exec            -> force `--exec`
-        // Jamais de `wsl --` seul : il passerait par le shell Linux par défaut.
+        // Never standalone `wsl --`: it would pass through default Linux shell.
         "launch": "auto",
-        "install_dir": "~/agwo", // côté WSL : paquet, .venv et copie de la politique
-        "env_file": "~/.config/agwo/env", // côté WSL, mode 600 : GITHUB_READ_TOKEN, BRAVE_API_KEY…
+        "install_dir": "~/agwo", // WSL side: package, .venv, and policy copy
+        "env_file": "~/.config/agwo/env", // WSL side, mode 600: GITHUB_READ_TOKEN, BRAVE_API_KEY…
         "startup_timeout_s": 90,
         "call_timeout_s": 180,
         "max_message_bytes": 8000000
     },
-    // Miroir de l'audit côté Windows (la référence est écrite dans WSL).
+    // Mirror audit log on Windows side (reference log is written in WSL).
     "client_audit_path": "${AGENTS_FLOW_CLIENT_AUDIT_LOG:-./audit/client-audit.jsonl}",
-    // ----------------------------------------------------------------- LLM (LM Studio, natif Windows)
-    // CrewAI tourne sous Windows, donc LM Studio est joint en loopback : aucune ouverture réseau vers WSL.
+    // ----------------------------------------------------------------- LLM (LM Studio, Windows native)
+    // CrewAI runs under Windows, so LM Studio is connected over loopback: no open network to WSL required.
     "llm": {
         "default": "lmstudio",
         "profiles": {
             "lmstudio": {
-                // Identifiant EXACT affiché par LM Studio (GET http://127.0.0.1:1234/v1/models, ou `agwo llm check`).
+                // EXACT ID displayed in LM Studio (GET http://127.0.0.1:1234/v1/models, or `agwo llm check`).
                 "model": "${LMSTUDIO_MODEL}",
                 "base_url": "${LMSTUDIO_BASE_URL:-http://127.0.0.1:1234/v1}",
                 "api_key": "lm-studio",
                 "temperature": 0.2,
                 "timeout_s": 300,
-                // Contexte RÉELLEMENT chargé dans LM Studio (Model settings → Context Length).
+                // Context length ACTUALLY loaded in LM Studio (Model settings → Context Length).
                 "context_window": "${LMSTUDIO_CONTEXT:-8192}",
-                // true  : appels d'outils natifs OpenAI (modèles entraînés au tool use : Qwen3/2.5, Llama 3.1+, gpt-oss…)
-                // false : format ReAct texte, accepté par tout modèle mais moins fiable
+                // true  : native OpenAI tool calls (models trained for tool use: Qwen3/2.5, Llama 3.1+, gpt-oss…)
+                // false : ReAct text format, supported by all models but less reliable
                 "function_calling": "${LMSTUDIO_FUNCTION_CALLING:-false}"
             }
         }
