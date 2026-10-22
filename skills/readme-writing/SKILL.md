@@ -1,6 +1,6 @@
 ---
 name: readme-writing
-description: "Rédiger ou améliorer un README et la documentation d'un projet à partir de l'analyse réelle du code, sans rien inventer."
+description: "Draft or improve a project README and technical documentation based on actual code analysis, without inventing anything."
 metadata:
   agents: "doc_writer"
   tools: "read_file, list_dir, search_in_files, scan_project, create_file, modify_file, check_file_modifiable"
@@ -8,34 +8,34 @@ metadata:
 
 # readme-writing
 
-> Une Skill CrewAI est un ensemble d'**instructions** chargées dans le prompt de l'agent. Elle n'accorde **aucune permission** :
-> les permissions viennent de `config/permissions.jsonc` et sont appliquées par le code des outils.
+> A CrewAI Skill is a set of **instructions** loaded into the agent's prompt. It grants **no permissions**:
+> permissions originate from `config/permissions.jsonc` and are enforced by the tool code.
 
-## Objectif
-Une documentation exacte, vérifiable, sans secret.
+## Objective
+Exact, verifiable documentation free of secrets.
 
-## Préconditions
-- Avoir exécuté `scan_project` et lu les fichiers cités dans le README.
+## Preconditions
+- Ran `scan_project` and inspected files cited in the README.
 
-## Paramètres / outils
-Outils : read_file, list_dir, search_in_files, scan_project, create_file, modify_file, check_file_modifiable.
-Voir safe-file-editing.
+## Parameters / Tools
+Tools: read_file, list_dir, search_in_files, scan_project, create_file, modify_file, check_file_modifiable.
+See safe-file-editing.
 
-## Résultats
-README créé (ou `README.proposed.md` si le README existant n'est pas modifiable) + liste « non vérifié ».
+## Results
+Created README (or `README.proposed.md` if existing README cannot be overwritten directly) + list of unverified items.
 
-## Erreurs possibles
-Voir safe-file-editing.
+## Possible Errors
+See safe-file-editing.
 
 ## Permissions
 `fs.read`, `fs.write`.
 
-## Limites de sécurité
-- Ne jamais inventer fonctionnalités, commandes, dépendances ou résultats de tests : marquer « non vérifié ».
-- Variables d'environnement : noms et rôle uniquement, jamais de valeur.
+## Security Boundaries
+- Never invent features, commands, dependencies, or test outputs: mark as "unverified".
+- Environment variables: names and description only, never concrete secret values.
 
 ## Tests
 tests/tools/test_file_tools.py
 
-## Consignes
-Sections selon le projet : présentation, fonctionnalités, architecture, prérequis, installation, configuration, variables d'environnement, utilisation, tests, structure, dépannage, limites, licence/contribution (si connues).
+## Guidelines
+Suggested sections based on project: overview, features, architecture, prerequisites, installation, configuration, environment variables, usage, testing, structure, troubleshooting, limitations, license/contributing (if known).

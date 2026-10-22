@@ -1,6 +1,6 @@
 ---
 name: safe-file-editing
-description: "Créer et modifier des fichiers en respectant la règle Git : un fichier existant n'est modifiable que s'il est suivi, commité et propre."
+description: "Create and modify files adhering to the Git rule: an existing file is modifiable only if tracked, committed, and clean."
 metadata:
   agents: "file_editor, developer, doc_writer"
   tools: "read_file, list_dir, search_in_files, create_file, modify_file, check_file_modifiable"
@@ -8,36 +8,36 @@ metadata:
 
 # safe-file-editing
 
-> Une Skill CrewAI est un ensemble d'**instructions** chargées dans le prompt de l'agent. Elle n'accorde **aucune permission** :
-> les permissions viennent de `config/permissions.jsonc` et sont appliquées par le code des outils.
+> A CrewAI Skill is a set of **instructions** loaded into the agent's prompt. It grants **no permissions**:
+> permissions originate from `config/permissions.jsonc` and are enforced by the tool code.
 
-## Objectif
-Écrire sans jamais écraser un travail non sauvegardé.
+## Objective
+Write without overwriting uncommitted or unsaved work.
 
-## Préconditions
-- Lire le fichier avant de le modifier.
-- `check_file_modifiable` peut être appelé avant `modify_file` pour connaître l'état.
+## Preconditions
+- Read the file before modifying it.
+- `check_file_modifiable` can be invoked before `modify_file` to determine status.
 
-## Paramètres / outils
-Outils : read_file, list_dir, search_in_files, create_file, modify_file, check_file_modifiable.
-create_file(path, content) ; modify_file(path, edits[{old,new}] | content) ; edits = tout-ou-rien, chaque `old` unique.
+## Parameters / Tools
+Tools: read_file, list_dir, search_in_files, create_file, modify_file, check_file_modifiable.
+create_file(path, content) ; modify_file(path, edits[{old,new}] | content) ; edits = all-or-nothing, each `old` must be unique.
 
-## Résultats
-Chemin écrit + vérification (hash, diff --stat). Si la modification directe est interdite : le fichier d'origine reste INTACT et une version `<nom>.proposed<ext>` est écrite, avec l'explication.
+## Results
+Written path + verification (hash, diff --stat). If direct modification is blocked: original file stays INTACT and a proposed file `<name>.proposed<ext>` is written with an explanation.
 
-## Erreurs possibles
+## Possible Errors
 `already_exists`, `edit_not_unique`, `outside_allowed_roots`, `path_traversal`, `symlink_in_path`, `denied_by_pattern`, `write_denied_by_pattern`, `secret_in_content`, `content_too_large`, `binary_file`.
 
 ## Permissions
-`fs.read` (+ `fs.write` pour créer/modifier).
+`fs.read` (+ `fs.write` to create/modify).
 
-## Limites de sécurité
-- Ne jamais tenter un autre chemin, un lien symbolique ou un autre outil après un refus.
-- Les fichiers `.env`, clés, `.git/`, `.github/workflows/**`, `.gitattributes` sont hors d'atteinte en écriture.
-- Un fichier créé mais non commité n'est plus modifiable directement : réussir en une fois, ou demander un commit.
+## Security Boundaries
+- Never attempt an alternate path, symlink, or alternate tool following a refusal.
+- `.env` files, keys, `.git/`, `.github/workflows/**`, and `.gitattributes` are strictly write-protected.
+- A newly created file not yet committed cannot be modified directly: succeed in one write or request a commit.
 
 ## Tests
 tests/tools/test_file_tools.py ; tests/security/test_git_guard.py
 
-## Consignes
-Préférer `edits` (changements minimaux) à `content`. Après une modification, rapporter le diff vérifié, pas le contenu supposé.
+## Guidelines
+Prefer `edits` (minimal precise changes) over overwriting full `content`. After modification, report actual verified diff rather than assumed content.
