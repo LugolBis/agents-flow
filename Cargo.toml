@@ -3,7 +3,7 @@ name = "agents-flow"
 version = "0.2.0"
 edition = "2021"
 rust-version = "1.80"
-description = "Secure multi-agent crew : centralised permissions, tool-side guardrails, audit for multi-platform usages (Windows ARM64 + Linux ARM64)."
+description = "Secure multi-agent team : centralised permissions, tool-side guardrails, audit for multi-platform usages (Windows ARM64 + Linux ARM64)."
 license = "MIT"
 
 [lib]
