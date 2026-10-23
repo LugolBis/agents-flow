@@ -112,7 +112,7 @@ fn _u(_: ToolCall) {}
 mod tests {
     use serde_json::json;
 
-    use crate::engine::helpers::{est_tokens, fit_context, parse_react};
+    use crate::engine::helpers::{fit_context, parse_react, tokens_count};
     use crate::engine::models::Step;
     use crate::engine::protocol::extract_json;
 
@@ -156,7 +156,7 @@ mod tests {
             m.push(Message::tool(&format!("{i}"), "x".repeat(4000)));
         }
         fit_context(&mut m, 3000);
-        assert!(est_tokens(&m) <= 3500 && m[0].role == "system" && m[1].role == "user");
+        assert!(tokens_count(&m) <= 3500 && m[0].role == "system" && m[1].role == "user");
         for (i, x) in m.iter().enumerate() {
             if x.role == "tool" {
                 assert!(
