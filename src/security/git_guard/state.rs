@@ -153,7 +153,7 @@ impl GitFileState {
         if head.returncode != 0 {
             return Self::no(
                 "not_committed",
-                "the current version wasn't commited locally",
+                "the current version wasn't committed locally",
                 Some(&repo),
                 rel_opt,
             );
