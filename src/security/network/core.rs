@@ -23,7 +23,7 @@ pub type Resolver = Arc<dyn Fn(&str) -> SecResult<Vec<IpAddr>> + Send + Sync>;
 pub fn default_resolver(host: &str) -> SecResult<Vec<IpAddr>> {
     let it = (host, 0u16)
         .to_socket_addrs()
-        .map_err(|_| net_denial("dns_failure", "résolution DNS impossible"))?;
+        .map_err(|_| net_denial("dns_failure", "DNS resolution failed"))?;
     let set: BTreeSet<IpAddr> = it.map(|a| a.ip()).collect();
     Ok(set.into_iter().collect())
 }
