@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 pub type Validator = Box<dyn Fn(&str) -> SecResult<String> + Send + Sync>;
 
-fn deny(code: &str, reason: String) -> SecurityError {
+pub fn deny(code: &str, reason: String) -> SecurityError {
     SecurityError::command(code, reason)
 }
 
