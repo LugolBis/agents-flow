@@ -56,7 +56,7 @@ static REGISTRY: LazyLock<Vec<Entry>> = LazyLock::new(|| {
     tools.extend(super::documents::tools());
     tools.extend(super::git_tools::tools());
     tools.extend(super::github::tools());
-    tools.extend(super::project::tools());
+    tools.extend(super::project::core::tools());
     tools.extend(super::shell::tools());
     tools.extend(super::tests_runner::tools());
     tools.extend(super::web::tools());
