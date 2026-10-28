@@ -231,27 +231,29 @@ mod tests {
     #[test]
     fn translation_structure() {
         let src = "# Titre\n\nTexte avec `code` et https://ex.com/a\n\n```python\nprint(1)\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n";
-        let g = markdown_preserved(src);
+        let fn_guardrail = markdown_preserved(src);
         let good = "# Title\n\nText with `code` and https://ex.com/a\n\n```python\nprint(1)\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n";
 
-        assert!(g(good).is_ok());
-        assert!(g(&good.replace("print(1)", "print(2)"))
+        assert!(fn_guardrail(good).is_ok());
+        assert!(fn_guardrail(&good.replace("print(1)", "print(2)"))
             .unwrap_err()
-            .contains("blocs de code"));
+            .contains("code block"));
 
-        assert!(g(&good.replace("# Title\n", ""))
+        assert!(fn_guardrail(&good.replace("# Title\n", ""))
             .unwrap_err()
-            .contains("titres"));
+            .contains("The translation did not preserve the structure: the number of Markdown headings has changed."));
 
-        assert!(g(&good.replace("`code`", "code"))
+        assert!(fn_guardrail(&good.replace("`code`", "code"))
             .unwrap_err()
             .contains("inline"));
 
-        assert!(g(&good.replace("https://ex.com/a", ""))
+        assert!(fn_guardrail(&good.replace("https://ex.com/a", ""))
             .unwrap_err()
             .contains("lost URL"));
 
-        assert!(strip_ambiguities(g)(&format!("{good}---AMBIGUITIES---\n- a doubt")).is_ok());
+        assert!(
+            strip_ambiguities(fn_guardrail)(&format!("{good}---AMBIGUITIES---\n- a doubt")).is_ok()
+        );
     }
 
     #[test]

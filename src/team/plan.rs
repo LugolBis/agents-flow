@@ -87,7 +87,7 @@ pub fn validate_plan(plan: &Plan, workers: &[String], cfg: &OrchestrationCfg) ->
     for step in &plan.steps {
         if !workers.contains(&step.agent) {
             errors.push(format!(
-                "{}: unknown agent '{}' or fobidden (allowed : {})",
+                "{}: unknown agent '{}' or forbidden (allowed : {})",
                 step.id,
                 step.agent,
                 workers.join(", ")
@@ -149,7 +149,8 @@ mod tests {
         };
         let e = validate_plan(&bad, &w, &cfg).join("|");
         for needle in [
-            "unknown or forbidden",
+            "unknown",
+            "forbidden",
             "duplicated",
             "depends from itself",
             "unknown dependency",
@@ -161,7 +162,7 @@ mod tests {
             goal: "goal".into(),
             steps: (0..9).map(|i| step(&format!("s{i}"), "a", &[])).collect(),
         };
-        assert!(validate_plan(&many, &w, &cfg)[0].contains("trop d'étapes"));
+        assert!(validate_plan(&many, &w, &cfg)[0].contains("too many steps"));
     }
     #[test]
     fn parsing_from_wrapped_json() {
