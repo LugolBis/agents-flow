@@ -21,7 +21,7 @@ pub fn load_env_file(path: &Path) -> Result<()> {
     {
         use crate::error::Error;
         use std::os::unix::fs::PermissionsExt;
-        if md.permissions().mode() & 0o077 != 0 {
+        if meta_data.permissions().mode() & 0o077 != 0 {
             return Err(Error::config(format!(
                 "{} doit être en mode 600 (secrets)",
                 path.display()
