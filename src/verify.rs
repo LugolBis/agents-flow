@@ -545,7 +545,7 @@ pub fn render(results: &[VResult]) -> String {
             "{}  {}  {}  {}",
             fn_pad(&vresult.name, width),
             fn_pad(&vresult.expected, 28),
-            if vresult.ok { "✔ OK " } else { "✘ ÉCHEC" },
+            if vresult.ok { "✔ OK " } else { "✘ FAILURE" },
             vresult.detail
         ));
     }
