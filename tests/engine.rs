@@ -84,7 +84,7 @@ fn plan_mode_end_to_end_with_native_tool_calls() {
     let seen = llm.seen.lock().unwrap();
     assert!(seen[2]
         .iter()
-        .any(|m| m.role == "tool" && m.content.contains("fichier créé")));
+        .any(|m| m.role == "tool" && m.content.contains("file created")));
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn invalid_plans_are_never_executed() {
             .error
             .as_deref()
             .unwrap_or("")
-            .contains("plan invalide")
+            .contains("invalid plan")
             && report.step_results.is_empty()
     );
     assert!(std::fs::read_dir(d.path().join("ws"))
@@ -147,7 +147,7 @@ fn ungranted_tool_is_blocked_by_the_second_barrier() {
         .any(|e| e["code"] == "tool_not_granted"));
     assert!(llm.seen.lock().unwrap()[1]
         .iter()
-        .any(|m| m.role == "tool" && m.content.contains("REFUSÉ")));
+        .any(|m| { m.role == "tool" && m.content.to_uppercase().contains("REFUSED") }));
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn react_protocol_and_guardrail_retry() {
         seen[1].last().unwrap().content.starts_with("Observation:")
             && seen[1].last().unwrap().content.contains("contenu")
     );
-    assert!(seen[2].last().unwrap().content.contains("rejetée"));
+    assert!(seen[2].last().unwrap().content.contains("rejected"));
     // guardrail exhausted -> the task fails, never passes silently
     let llm2 = Arc::new(ScriptedLlm::new(true, vec![text("ok"), text("ok")]));
     let a2 = Agent::new(rt.as_ref(), &st, "file_editor", llm2 as Arc<dyn Llm>, false).unwrap();
