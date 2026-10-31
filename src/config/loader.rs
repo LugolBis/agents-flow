@@ -2,14 +2,19 @@
 //! same agents in agents/permissions; granted tools exist; never granted AND denied; agent holds ALL capabilities of a granted tool;
 //! the orchestrator has no tool and no capability; delegations target existing agents.
 
-use super::jsonc::{expand_str, load_jsonc, EnvMap};
-use crate::config::agents::AgentsConfig;
+use super::jsonc::{expand_str, load_jsonc, strip_jsonc, EnvMap};
+use crate::config::agents::{AgentsConfig, SchemaSource};
 use crate::config::deployment::DeploymentConfig;
 use crate::config::permissions::PermissionsConfig;
 use crate::config::tools::{ToolsConfig, CAPABILITIES};
 use crate::error::{Error, Result};
-use std::collections::BTreeSet;
+use crate::schema::{OutputSchema, MAX_SCHEMA_BYTES};
+use crate::util::realpath;
+
+use std::collections::{BTreeSet, HashMap};
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 pub const ORCHESTRATOR_ID: &str = "orchestrator";
 
@@ -21,11 +26,69 @@ pub struct Settings {
     pub agents: AgentsConfig,
     pub tools: ToolsConfig,
     pub deployment: DeploymentConfig,
+    /// Compiled `output_schema` per agent id (only agents that define one).
+    pub output_schemas: HashMap<String, Arc<OutputSchema>>,
 }
 
 fn parse<T: serde::de::DeserializeOwned>(val: serde_json::Value, file: &str) -> Result<T> {
     serde_json::from_value(val)
         .map_err(|err| Error::config(format!("invalid config ({file}) :\n{err}")))
+}
+
+/// Schema files must live UNDER the config directory (no absolute path, no `..`, no symlink escape) and stay small.
+fn read_schema_file(base: &Path, rel: &str, agent: &str) -> Result<serde_json::Value> {
+    let fn_bad = |why: &str| {
+        Error::config(format!(
+            "agents.{agent}.output_schema '{:?}' : {why}",
+            realpath(&base.join(rel))
+        ))
+    };
+
+    if rel.is_empty() || rel.contains("..") || rel.contains('\\') || Path::new(rel).is_absolute() {
+        return Err(fn_bad(
+            "relative path to the config folder is required without '..'",
+        ));
+    }
+
+    let (root, path) = (realpath(base), realpath(&base.join(rel)));
+
+    if !path.starts_with(&root) {
+        return Err(fn_bad("The file comes out of the configuration folder."));
+    }
+
+    let meta_data = fs::metadata(&path).map_err(|_| fn_bad("file not found"))?;
+
+    if !meta_data.is_file() || meta_data.len() > (MAX_SCHEMA_BYTES as u64) {
+        return Err(fn_bad("invalid or too large file"));
+    }
+
+    let text = fs::read_to_string(&path).map_err(|_| fn_bad("impossible to read"))?;
+
+    serde_json::from_str(&strip_jsonc(
+        text.strip_prefix('\u{feff}').unwrap_or(&text),
+    )?)
+    .map_err(|err| fn_bad(&format!("invalid JSON ({err})")))
+}
+
+fn resolve_output_schemas(
+    base: &Path,
+    agents: &AgentsConfig,
+) -> Result<HashMap<String, Arc<OutputSchema>>> {
+    let mut out = HashMap::new();
+
+    for (id, spec) in agents.agents.iter() {
+        let Some(src) = &spec.output_schema else {
+            continue;
+        };
+
+        let schema = match src {
+            SchemaSource::File(rel) => read_schema_file(base, rel, id)?,
+            SchemaSource::Inline(value) => value.clone(),
+        };
+
+        out.insert(id.clone(), Arc::new(OutputSchema::compile(id, schema)?));
+    }
+    Ok(out)
 }
 
 impl Settings {
@@ -67,6 +130,7 @@ impl Settings {
         permissions.validate()?;
         agents.validate()?;
         deployment.validate()?;
+        let output_schemas = resolve_output_schemas(&base, &agents)?;
 
         let settings = Settings {
             config_dir: base,
@@ -74,6 +138,7 @@ impl Settings {
             agents,
             tools,
             deployment,
+            output_schemas,
         };
         settings.validate_cross_references()?;
 
