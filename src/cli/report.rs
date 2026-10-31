@@ -1,6 +1,6 @@
 use agents_flow::{team::orchestrator::RunReport, util::clip};
 
-pub fn print_report(report: &RunReport) {
+fn print_report(report: &RunReport) {
     println!("=== mode : {} ===\n{}\n", report.mode, report.request);
 
     if let Some(plan) = &report.plan {
@@ -19,10 +19,21 @@ pub fn print_report(report: &RunReport) {
     }
 
     for (id, text) in &report.step_results {
-        println!("--- step {id} ---\n{}\n", clip(text, 1500));
+        let shown = report
+            .step_json
+            .iter()
+            .find(|(id_, _)| id_ == id)
+            .map(|(_, value_)| serde_json::to_string_pretty(value_).unwrap_or_default())
+            .unwrap_or_else(|| text.clone());
+        println!("--- step {id} ---\n{}\n", clip(&shown, 1500));
     }
 
-    if !report.final_text.is_empty() {
+    if let Some(value_) = &report.final_json {
+        println!(
+            "--- Final result (JSON conforming to the schema) ---\n{}\n",
+            serde_json::to_string_pretty(value_).unwrap_or_default()
+        );
+    } else if !report.final_text.is_empty() {
         println!("--- Final result ---\n{}\n", report.final_text);
     }
 
@@ -64,5 +75,16 @@ pub fn print_report(report: &RunReport) {
 
     if let Some(err) = &report.error {
         println!("\n✘ ERROR : {err}");
+    }
+}
+
+pub fn emit(report: &RunReport, json: bool) {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report.to_json()).unwrap_or_default()
+        );
+    } else {
+        print_report(report);
     }
 }
