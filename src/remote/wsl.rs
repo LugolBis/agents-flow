@@ -175,6 +175,43 @@ impl Wsl {
             add(&format!("config/{n}"), text.as_bytes(), 0o644)?;
         }
 
+        let schema_dir = fs::read_dir(settings.config_dir.join("schemas")).map_err(|err| {
+            Error::config(format!(
+                "Failed to read '{:?}' entries due to {}.",
+                settings.config_dir.join("schemas"),
+                err
+            ))
+        })?;
+
+        for entry_res in schema_dir {
+            match &entry_res {
+                Ok(entry) => {
+                    let path_ = settings.config_dir.join("schemas").join(entry.file_name());
+                    let text = fs::read_to_string(&path_)?.replace("\r\n", "\n");
+                    add(
+                        &format!(
+                            "config/schemas/{}",
+                            path_
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .ok_or(Error::Config(format!(
+                                    "Failed to get the file name of the path {:?}",
+                                    path_
+                                )))?
+                        ),
+                        text.as_bytes(),
+                        0o644,
+                    )?;
+                }
+                Err(err) => {
+                    return Err(Error::config(format!(
+                        "Failed to read '{:?}' entry due to {}.",
+                        entry_res, err
+                    )))
+                }
+            }
+        }
+
         if let Some(sk) = settings
             .config_dir
             .parent()
