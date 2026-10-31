@@ -1,5 +1,5 @@
 use super::args::{Cli, Cmd, WslCmd};
-use super::report::print_report;
+use super::report::emit;
 use agents_flow::config::Settings;
 use agents_flow::error::{Error, Result};
 use agents_flow::llm::{build_llm, Message};
@@ -33,8 +33,12 @@ pub fn execute(cli: Cli) -> Result<ExitCode> {
         Cmd::Audit { tail, denials } => audit(cfg, tail, denials),
         Cmd::LlmCheck { profile } => llm_check(cfg, profile.as_deref()),
         Cmd::Wsl(WslCmd::Sync { binary }) => wsl_sync(cfg, &binary),
-        Cmd::Run { request, mode } => run(cfg, &request, &mode),
-        Cmd::Pipeline { name, params } => pipeline(cfg, &name, params),
+        Cmd::Run {
+            request,
+            mode,
+            json,
+        } => run(cfg, &request, &mode, json),
+        Cmd::Pipeline { name, params, json } => pipeline(cfg, &name, params, json),
     }
 }
 
@@ -172,11 +176,13 @@ fn wsl_sync(cfg: Option<&Path>, binary: &Path) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn run(cfg: Option<&Path>, request: &str, mode: &str) -> Result<ExitCode> {
+fn run(cfg: Option<&Path>, request: &str, mode: &str, json: bool) -> Result<ExitCode> {
     let settings = Arc::new(Settings::load(cfg, None, true)?);
     let host = make_host(&settings)?;
 
-    println!("backend : {}", host.backend_name());
+    if !json {
+        println!("backend : {}", host.backend_name());
+    }
     let orch = Orchestrator::new(host, None)?;
 
     let report = if mode == "hierarchical" {
@@ -185,17 +191,22 @@ fn run(cfg: Option<&Path>, request: &str, mode: &str) -> Result<ExitCode> {
         orch.run_plan(request)
     };
 
-    print_report(&report);
+    emit(&report, json);
     Ok(exit_code(report.ok()))
 }
 
-fn pipeline(cfg: Option<&Path>, name: &str, params: Vec<(String, String)>) -> Result<ExitCode> {
+fn pipeline(
+    cfg: Option<&Path>,
+    name: &str,
+    params: Vec<(String, String)>,
+    json: bool,
+) -> Result<ExitCode> {
     let settings = Arc::new(Settings::load(cfg, None, true)?);
     let host = make_host(&settings)?;
 
     let orch = Orchestrator::new(host, None)?;
     let report = orch.run_pipeline(name, &params.into_iter().collect::<HashMap<_, _>>())?;
 
-    print_report(&report);
+    emit(&report, json);
     Ok(exit_code(report.ok()))
 }
