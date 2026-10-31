@@ -28,12 +28,17 @@ pub enum Cmd {
         request: String,
         #[arg(long, default_value = "plan", value_parser = ["plan", "hierarchical"])]
         mode: String,
+        /// print one machine-readable JSON report (structured results as real JSON)
+        #[arg(long)]
+        json: bool,
     },
     /// Run a hand-written, validated pipeline.
     Pipeline {
         name: String,
         #[arg(short = 'p', long = "param", value_parser = parse_kv)]
         params: Vec<(String, String)>,
+        #[arg(long)]
+        json: bool,
     },
     /// Show the audit trail.
     Audit {

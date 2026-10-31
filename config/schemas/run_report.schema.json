@@ -1,0 +1,60 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "run_report",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "status",
+        "summary",
+        "findings",
+        "refusals"
+    ],
+    "properties": {
+        "status": {
+            "enum": [
+                "success",
+                "partial",
+                "failed"
+            ]
+        },
+        "summary": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 2000
+        },
+        "findings": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "fact",
+                    "source"
+                ],
+                "properties": {
+                    "fact": {
+                        "type": "string"
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "file path, URL or step id"
+                    },
+                    "confidence": {
+                        "enum": [
+                            "observed",
+                            "deduced"
+                        ]
+                    }
+                }
+            }
+        },
+        "refusals": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "security refusals or failures met during the run"
+        }
+    }
+}

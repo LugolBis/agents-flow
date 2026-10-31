@@ -1,7 +1,7 @@
 use crate::engine::protocol::{extract_json, ASK_QUESTION};
 use crate::security::runtime::ToolDef;
 use crate::util::clip;
-use crate::{engine::models::Step, llm::Message};
+use crate::{engine::models::Step, llm::core::Message};
 use regex::Regex;
 use serde_json::{json, Value};
 use std::sync::LazyLock;

@@ -3,6 +3,7 @@ pub enum AgentError {
     Llm(String),
     Timeout,
     Guardrail(String),
+    Schema(String),
 }
 
 impl AgentError {
@@ -11,6 +12,7 @@ impl AgentError {
             AgentError::Llm(_) => "LLMError",
             AgentError::Timeout => "AgentTimeout",
             AgentError::Guardrail(_) => "GuardrailFailed",
+            AgentError::Schema(_) => "SchemaViolation",
         }
     }
 }
@@ -23,6 +25,10 @@ impl std::fmt::Display for AgentError {
             AgentError::Guardrail(m) => write!(
                 f,
                 "guardrails not respected, after the authorized retries : {m}"
+            ),
+            AgentError::Schema(m) => write!(
+                f,
+                "the final output don't respect the JSON Schema output : {m}"
             ),
         }
     }

@@ -3,6 +3,7 @@ pub mod engine;
 pub mod error;
 pub mod llm;
 pub mod remote;
+pub mod schema;
 pub mod security;
 pub mod team;
 pub mod tools;

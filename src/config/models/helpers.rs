@@ -78,6 +78,10 @@ pub fn lm_url() -> String {
     "http://127.0.0.1:1234/v1".into()
 }
 
+pub fn so_auto() -> String {
+    "auto".into()
+}
+
 pub fn lm_key() -> String {
     "lm-studio".into()
 }

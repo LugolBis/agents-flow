@@ -2,18 +2,33 @@
 //! Native tool calling (OpenAI/Anthropic) or the ReAct text protocol; iteration, wall-clock, retry and rate limits from `agents.jsonc`;
 //! context-window management; deterministic guardrails with bounded retries. Second barrier: any tool call outside the agent's granted
 //! list is blocked HERE (independently of the tool layer's own `authorize`).
-use crate::config::{models::agents::AgentSpec, Settings};
-use crate::engine::errors::AgentError;
-use crate::engine::helpers::{delegation_defs, Delegate};
-use crate::engine::models::TaskInput;
-use crate::engine::protocol::Guardrail;
-use crate::engine::skill::{load_skills, Skill};
+use super::{
+    errors::AgentError,
+    helpers::{delegation_defs, Delegate},
+    models::TaskInput,
+    protocol::Guardrail,
+    skill::{load_skills, Skill},
+};
+
 use crate::error::{Error, Result};
-use crate::llm::{Llm, Message, ToolCall};
+use crate::llm::core::{Llm, Message, ToolCall};
 use crate::security::runtime::{ToolDef, ToolHost};
-use std::collections::VecDeque;
+use crate::{
+    config::{models::agents::AgentSpec, Settings},
+    schema::OutputSchema,
+};
+
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use std::{collections::VecDeque, result};
+
+/// Which output schema governs a run: the agent's configured one, none, or an explicit one (e.g. the planner's built-in Plan schema).
+#[derive(Clone)]
+pub enum SchemaChoice {
+    Configured,
+    Disabled,
+    Override(Arc<OutputSchema>),
+}
 
 pub struct Agent {
     pub id: String,
@@ -21,6 +36,7 @@ pub struct Agent {
     pub tools: Vec<ToolDef>,
     pub manager: bool,
     pub(super) skills: Vec<Skill>,
+    pub(super) schema: Option<Arc<OutputSchema>>,
     pub(super) llm: Arc<dyn Llm>,
     pub(super) rpm: Mutex<VecDeque<Instant>>,
 }
@@ -60,18 +76,27 @@ impl Agent {
             host.tool_defs(id)?
         };
 
+        let schema = settings.output_schemas.get(id).cloned();
+
         Ok(Agent {
             id: id.to_string(),
             spec,
             tools,
             manager,
             skills,
+            schema,
             llm,
             rpm: Mutex::new(VecDeque::new()),
         })
     }
 
+    /// The agent's configured output schema, if any.
+    pub fn output_schema(&self) -> Option<&Arc<OutputSchema>> {
+        self.schema.as_ref()
+    }
+
     /// Runs one task. The guardrail result (if any) is sent back to the agent for a correction, at most `retries` times; then the task fails.
+    /// Same contract as before: for an agent WITHOUT `output_schema` nothing changes; with one, the returned text is the canonical JSON.
     pub fn run(
         &self,
         host: &dyn ToolHost,
@@ -80,13 +105,54 @@ impl Agent {
         retries: u32,
         delegate: Option<Delegate>,
     ) -> std::result::Result<String, AgentError> {
+        self.run_with(
+            host,
+            input,
+            guard,
+            retries,
+            delegate,
+            SchemaChoice::Configured,
+        )
+    }
+
+    /// Runs one task. The guardrail result (if any) is sent back to the agent for a correction, at most `retries` times; then the task fails.
+    pub fn run_with(
+        &self,
+        host: &dyn ToolHost,
+        input: &TaskInput,
+        guard: Option<&Guardrail>,
+        retries: u32,
+        delegate: Option<Delegate>,
+        choice: SchemaChoice,
+    ) -> result::Result<String, AgentError> {
+        let schema: Option<Arc<OutputSchema>> = match choice {
+            SchemaChoice::Configured => self.schema.clone(),
+            SchemaChoice::Disabled => None,
+            SchemaChoice::Override(out_schema) => Some(out_schema),
+        };
+
         let mut msgs = vec![
-            Message::system(self.system_prompt(!self.llm.native_tools())),
+            Message::system(self.system_prompt(!self.llm.native_tools(), schema.as_deref())),
             Message::user(Self::user_prompt(input)),
         ];
 
         for attempt in 0..=retries {
-            let out = self.run_loop(host, &mut msgs, delegate)?;
+            let mut out = self.run_loop(host, &mut msgs, delegate)?;
+            if let Some(sc) = &schema {
+                match self.enforce_schema(&msgs, &out, sc) {
+                    Ok(canonical) => out = canonical,
+                    Err(AgentError::Schema(fb)) if attempt >= retries => {
+                        return Err(AgentError::Schema(fb))
+                    }
+                    Err(AgentError::Schema(fb)) => {
+                        msgs.push(Message::assistant(out, vec![]));
+                        msgs.push(Message::user(format!("Your answer was rejected by an automatic verification : {fb}\nCorrect it and generate the complete final answer.")));
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+
             let Some(guard_fn) = guard else {
                 return Ok(out);
             };

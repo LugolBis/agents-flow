@@ -55,6 +55,14 @@ impl AgentLimits {
     }
 }
 
+/// `output_schema` of an agent: a path (relative to the config directory, e.g. "schemas/report.schema.json") or an inline JSON Schema.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum SchemaSource {
+    File(String),
+    Inline(serde_json::Value),
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentSpec {
@@ -75,6 +83,9 @@ pub struct AgentSpec {
     pub guardrails: Vec<String>,
     #[serde(default)]
     pub llm: Option<String>,
+    /// Structured output: the agent's FINAL answer must be a JSON document valid against this schema (omitted = free text, as before).
+    #[serde(default)]
+    pub output_schema: Option<SchemaSource>,
     #[serde(default)]
     pub limits: AgentLimits,
 }
