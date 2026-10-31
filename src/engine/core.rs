@@ -11,7 +11,7 @@ use super::{
 };
 
 use crate::error::{Error, Result};
-use crate::llm::{Llm, Message, ToolCall};
+use crate::llm::core::{Llm, Message, ToolCall};
 use crate::security::runtime::{ToolDef, ToolHost};
 use crate::{
     config::{models::agents::AgentSpec, Settings},

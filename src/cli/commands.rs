@@ -2,7 +2,7 @@ use super::args::{Cli, Cmd, WslCmd};
 use super::report::emit;
 use agents_flow::config::Settings;
 use agents_flow::error::{Error, Result};
-use agents_flow::llm::{build_llm, Message};
+use agents_flow::llm::core::{build_llm, Message};
 use agents_flow::remote::client::WslHost;
 use agents_flow::remote::wsl::Wsl;
 use agents_flow::remote::{doctor, executor};

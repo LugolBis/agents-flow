@@ -2,7 +2,7 @@ use crate::engine::core::Agent;
 use crate::engine::errors::AgentError;
 use crate::engine::helpers::{fit_context, parse_react, Delegate, DELEGATE_WORK};
 use crate::engine::models::{Step, TaskInput};
-use crate::llm::{Completion, LlmError, Message};
+use crate::llm::core::{Completion, LlmError, Message};
 use crate::schema::OutputSchema;
 use crate::security::audit::Rec;
 use crate::security::runtime::{ToolDef, ToolHost};

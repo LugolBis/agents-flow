@@ -16,7 +16,7 @@ use crate::engine::{
     protocol::{Guardrail, ASK_QUESTION},
 };
 use crate::error::{Error, Result};
-use crate::llm::{build_llm, Llm};
+use crate::llm::core::{build_llm, Llm};
 use crate::schema::OutputSchema;
 use crate::security::{audit::Event, runtime::ToolHost};
 use crate::team::plan::plan_schema;
