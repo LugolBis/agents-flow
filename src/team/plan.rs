@@ -67,6 +67,25 @@ impl Plan {
     }
 }
 
+/// JSON Schema of `Plan`, specialised for this run: `agent` is an ENUM of the real worker ids (constrained decoding cannot invent an agent),
+/// the number of steps and the instruction length follow the orchestration limits. `validate_plan` still re-checks everything in code.
+pub fn plan_schema(workers: &[String], cfg: &OrchestrationCfg) -> serde_json::Value {
+    serde_json::json!({
+    "type": "object", "additionalProperties": false, "required": ["goal", "steps"],
+    "properties": {
+        "goal": {"type": "string", "minLength": 3},
+        "steps": {"type": "array", "minItems": 1, "maxItems": cfg.max_steps, "items": {
+            "type": "object", "additionalProperties": false, "required": ["id", "agent", "instruction", "expected_output"],
+            "properties": {
+                "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,15}$"},
+                "agent": {"enum": workers},
+                "instruction": {"type": "string", "minLength": 5, "maxLength": cfg.max_instruction_chars},
+                "expected_output": {"type": "string", "minLength": 3},
+                "depends_on": {"type": "array", "items": {"type": "string"}}
+            }}}
+    }})
+}
+
 /// Returns the list of errors (empty = valid plan).
 pub fn validate_plan(plan: &Plan, workers: &[String], cfg: &OrchestrationCfg) -> Vec<String> {
     let mut errors = Vec::new();
@@ -173,6 +192,38 @@ mod tests {
         assert!(
             Plan::from_text("{\"goal\":\"abc\",\"extra\":1,\"steps\":[]}").is_err(),
             "unknown keys refused"
+        );
+    }
+
+    #[test]
+    fn plan_schema_matches_plan_struct() {
+        let w = vec!["a".to_string(), "b".to_string()];
+        let sc = crate::schema::OutputSchema::compile(
+            "plan",
+            plan_schema(&w, &OrchestrationCfg::default()),
+        )
+        .unwrap();
+
+        let good = serde_json::to_value(Plan {
+            goal: "goal".into(),
+            steps: vec![step("s1", "a", &[]), step("s2", "b", &["s1"])],
+        })
+        .unwrap();
+
+        assert!(sc.check(&good).is_ok());
+
+        let bad = serde_json::to_value(Plan {
+            goal: "goal".into(),
+            steps: vec![step("s1", "root", &[])],
+        })
+        .unwrap();
+
+        assert!(
+            sc.check(&bad)
+                .unwrap_err()
+                .join(" ")
+                .contains("/steps/0/agent"),
+            "unknown agent rejected by the schema itself"
         );
     }
 }
