@@ -100,6 +100,10 @@ pub struct LLMProfile {
     /// true: native OpenAI tool calls; false: ReAct text format (slower, accepted by any model).
     #[serde(default, deserialize_with = "deserialize_string_or_bool")]
     pub function_calling: bool,
+    /// Constrained decoding for agents that define `output_schema`: "auto" (send `response_format: json_schema`; if the server rejects it, remember
+    /// and fall back to prompt + validation) | "json_schema" (always send it; a rejection is an error) | "off" (prompt + validation only).
+    #[serde(default = "so_auto")]
+    pub structured_output: String,
 }
 
 impl LLMProfile {
@@ -117,6 +121,12 @@ impl LLMProfile {
         }
 
         gt_le(&format!("{f}.timeout_s"), self.timeout_s, 3600.0)?;
+
+        lit(
+            &format!("{f}.structured_output"),
+            &self.structured_output,
+            &["auto", "json_schema", "off"],
+        )?;
 
         ge(
             &format!("{f}.context_window"),
