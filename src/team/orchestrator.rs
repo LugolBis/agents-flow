@@ -4,9 +4,12 @@
 //!    runs with a context limited to its declared dependencies, guardrails and bounded retries;
 //!  * `hierarchical`: the orchestrator delegates to workers through two delegation tools (routing decided by the LLM, no validated plan).
 //! In every mode no worker can delegate and every agent can only use its own tools.
+use serde_json::{json, Value};
+
 use super::guardrails::{build_guardrail, compose, markdown_preserved, strip_ambiguities};
 use super::plan::{validate_plan, Plan, PlanStep};
 use crate::config::{models::agents::OrchestrationCfg, Settings, ORCHESTRATOR_ID};
+use crate::engine::core::SchemaChoice;
 use crate::engine::{
     core::Agent,
     models::TaskInput,
@@ -14,7 +17,9 @@ use crate::engine::{
 };
 use crate::error::{Error, Result};
 use crate::llm::{build_llm, Llm};
+use crate::schema::OutputSchema;
 use crate::security::{audit::Event, runtime::ToolHost};
+use crate::team::plan::plan_schema;
 use crate::util::clip;
 use std::collections::{BTreeMap, HashMap};
 use std::result;
@@ -31,11 +36,36 @@ pub struct RunReport {
     pub audit: BTreeMap<String, usize>,
     pub denials: Vec<Event>,
     pub warnings: Vec<String>,
+    /// Parsed results of agents that define an `output_schema` (already validated): per step id, and the orchestrator's final answer.
+    pub step_json: Vec<(String, Value)>,
+    pub final_json: Option<Value>,
 }
 
 impl RunReport {
     pub fn ok(&self) -> bool {
         self.error.is_none()
+    }
+
+    /// Machine-readable report (`--json`): structured results appear as real JSON values, free-text ones as strings.
+    pub fn to_json(&self) -> Value {
+        let steps: serde_json::Map<String, Value> = self
+            .step_results
+            .iter()
+            .map(|(id, text)| {
+                (
+                    id.clone(),
+                    self.step_json
+                        .iter()
+                        .find(|(id_, _)| id_ == id)
+                        .map(|(_, value)| value.clone())
+                        .unwrap_or_else(|| json!(text)),
+                )
+            })
+            .collect();
+
+        json!({"ok": self.ok(), "mode": self.mode, "request": self.request, "plan": self.plan, "steps": steps,
+               "final": self.final_json.clone().unwrap_or_else(|| json!(self.final_text)), "final_is_json": self.final_json.is_some(),
+               "audit": self.audit, "denials": self.denials, "warnings": self.warnings, "error": self.error})
     }
 }
 
@@ -44,6 +74,7 @@ pub struct Orchestrator {
     agents: HashMap<String, Agent>,
     cfg: OrchestrationCfg,
     llm_override: Option<Arc<dyn Llm>>,
+    plan_schema: Arc<OutputSchema>,
 }
 
 const PLAN_EXAMPLE: &str = r#"{"goal": "…", "steps": [{"id": "s1", "agent": "<identifiant>", "instruction": "…", "expected_output": "…", "depends_on": []}]}"#;
@@ -70,16 +101,32 @@ impl Orchestrator {
             );
         }
 
+        let cfg = settings.agents.orchestration.clone();
+        let plan_schema = Arc::new(OutputSchema::compile(
+            "plan",
+            plan_schema(&settings.worker_ids(), &cfg),
+        )?);
+
         Ok(Orchestrator {
             cfg: settings.agents.orchestration.clone(),
             host,
             agents,
             llm_override,
+            plan_schema,
         })
     }
 
     fn st(&self) -> &Settings {
         self.host.settings()
+    }
+
+    /// Parsed JSON of an agent's (canonical) answer, only for agents that define an `output_schema`.
+    fn json_of(&self, agent: &str, text: &str) -> Option<Value> {
+        self.st()
+            .output_schemas
+            .contains_key(agent)
+            .then(|| serde_json::from_str(text).ok())
+            .flatten()
     }
 
     pub fn workers(&self) -> Vec<String> {
@@ -163,9 +210,23 @@ impl Orchestrator {
             context: vec![],
         };
 
+        // the planner ALWAYS answers under the built-in Plan schema (independent of any `output_schema` configured for the orchestrator's final report)
         let raw = orch
-            .run(self.host.as_ref(), &input, None, 0, None)
-            .map_err(|e| format!("scheduler failed ({})", e.kind()))?;
+            .run_with(
+                self.host.as_ref(),
+                &input,
+                None,
+                0,
+                None,
+                SchemaChoice::Override(self.plan_schema.clone()),
+            )
+            .map_err(|err| {
+                format!(
+                    "scheduler failed ({}) : {}",
+                    err.kind(),
+                    clip(&err.to_string(), 600)
+                )
+            })?;
 
         Plan::from_text(&raw).map_err(|e| format!("unreadable scheduler output ({e})"))
     }
@@ -269,7 +330,10 @@ impl Orchestrator {
                     None,
                 )
             }) {
-                Ok(Ok(text)) => report.final_text = text,
+                Ok(Ok(text)) => {
+                    report.final_json = self.json_of(ORCHESTRATOR_ID, &text);
+                    report.final_text = text;
+                }
                 Ok(Err(err)) => {
                     report.error = Some(format!("{}: {}", err.kind(), clip(&err.to_string(), 300)))
                 }
@@ -278,12 +342,24 @@ impl Orchestrator {
         }
 
         for step in &plan.steps {
-            if !results.iter().any(|(i, _)| *i == step.id) {
+            if !results.iter().any(|(id, _)| *id == step.id) {
                 report
                     .warnings
                     .push(format!("step {} isn't finished", step.id));
             }
         }
+
+        report.step_json = plan
+            .steps
+            .iter()
+            .filter_map(|step_| {
+                results
+                    .iter()
+                    .find(|(id, _)| *id == step_.id)
+                    .and_then(|(_, text)| self.json_of(&step_.agent, text))
+                    .map(|value| (step_.id.clone(), value))
+            })
+            .collect();
 
         report.step_results = results;
         self.finish(&mut report, start);
@@ -400,7 +476,10 @@ impl Orchestrator {
                 };
 
                 match agent_m.run(self.host.as_ref(), &input, None, 0, Some(&delegate)) {
-                    Ok(text) => report.final_text = text,
+                    Ok(text) => {
+                        report.final_json = self.json_of(ORCHESTRATOR_ID, &text);
+                        report.final_text = text;
+                    }
                     Err(err) => {
                         report.error =
                             Some(format!("{}: {}", err.kind(), clip(&err.to_string(), 300)))
