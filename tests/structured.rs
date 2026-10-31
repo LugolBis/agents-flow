@@ -2,7 +2,11 @@
 //! `response_format` negotiation (against a tiny local HTTP server) — all without a real model.
 use agents_flow::config::{models::deployment::LLMProfile, Settings};
 use agents_flow::engine::{core::Agent, models::TaskInput};
-use agents_flow::llm::{Completion, Llm, LlmError, OpenAiCompat, ScriptedLlm, ToolCall};
+use agents_flow::llm::{
+    core::{Completion, Llm, LlmError, Message, ToolCall},
+    mock::ScriptedLlm,
+    openai::OpenAiCompat,
+};
 use agents_flow::schema::OutputSchema;
 use agents_flow::security::runtime::SecurityRuntime;
 use agents_flow::team::orchestrator::Orchestrator;
@@ -294,7 +298,7 @@ fn response_format_is_sent_then_negotiated_away_once_if_rejected() {
         chat("{\"status\":\"ok\"}"),
     ]);
     let llm = profile(port, "auto");
-    let msgs = vec![agents_flow::llm::Message::user("go")];
+    let msgs = vec![Message::user("go")];
     let c = llm.complete_structured(&msgs, &schema).unwrap();
     assert_eq!(c.content, "{\"status\":\"ok\"}");
     llm.complete_structured(&msgs, &schema).unwrap();
@@ -316,13 +320,12 @@ fn explicit_json_schema_mode_does_not_hide_a_rejection_and_off_never_sends_it() 
     let schema = OutputSchema::compile("r", json!({"type": "object"})).unwrap();
     let (port, _) = mock_server(vec![(400, "{\"error\":\"nope\"}".into())]);
     assert!(matches!(
-        profile(port, "json_schema")
-            .complete_structured(&[agents_flow::llm::Message::user("go")], &schema),
+        profile(port, "json_schema").complete_structured(&[Message::user("go")], &schema),
         Err(LlmError::Fatal(_))
     ));
     let (port, bodies) = mock_server(vec![chat("{}")]);
     profile(port, "off")
-        .complete_structured(&[agents_flow::llm::Message::user("go")], &schema)
+        .complete_structured(&[Message::user("go")], &schema)
         .unwrap();
     assert!(!bodies.lock().unwrap()[0].contains("response_format"));
 }

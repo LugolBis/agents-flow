@@ -2,7 +2,10 @@
 //! «second barrier» without any model.
 use agents_flow::config::Settings;
 use agents_flow::engine::{core::Agent, models::TaskInput};
-use agents_flow::llm::{Completion, Llm, ScriptedLlm, ToolCall};
+use agents_flow::llm::{
+    core::{Completion, Llm, ToolCall},
+    mock::ScriptedLlm,
+};
 use agents_flow::security::runtime::SecurityRuntime;
 use agents_flow::team::orchestrator::Orchestrator;
 use serde_json::json;
