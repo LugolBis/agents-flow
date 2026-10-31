@@ -4,6 +4,7 @@
 //! tool-calling support cannot be guessed — both are driven by `deployment.jsonc`.
 use crate::config::{models::deployment::LLMProfile, Settings};
 use crate::error::{Error, Result};
+use crate::schema::OutputSchema;
 use crate::security::runtime::ToolDef;
 use crate::util::clip;
 use serde_json::{json, Value};
@@ -11,6 +12,7 @@ use std::collections::VecDeque;
 use std::fmt::{self, Display, Formatter};
 use std::io::Read;
 use std::result;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -102,6 +104,17 @@ pub trait Llm: Send + Sync {
         1024
     }
     fn describe(&self) -> String;
+
+    // ONE JSON document conforming to `schema`, generated WITHOUT tools. Providers that can constrain decoding override this; the default is a
+    /// plain completion (the prompt already carries the schema) — the caller always validates the result, so the default is safe.
+    fn complete_structured(
+        &self,
+        msgs: &[Message],
+        schema: &OutputSchema,
+    ) -> result::Result<Completion, LlmError> {
+        let _ = schema;
+        self.complete(msgs, &[], &[])
+    }
 }
 
 fn loopback(url: &str) -> bool {
@@ -186,6 +199,9 @@ pub struct OpenAiCompat {
     pub timeout_s: f64,
     pub function_calling: bool,
     pub context_window: usize,
+    /// "auto" | "json_schema" | "off" (see `LLMProfile::structured_output`).
+    pub structured_output: String,
+    schema_unsupported: AtomicBool,
 }
 
 impl OpenAiCompat {
@@ -199,29 +215,29 @@ impl OpenAiCompat {
             timeout_s: profile.timeout_s,
             function_calling: profile.function_calling,
             context_window: profile.context_window,
+            structured_output: profile.structured_output.clone(),
+            schema_unsupported: AtomicBool::new(false),
         }
     }
-}
 
-impl Llm for OpenAiCompat {
-    fn complete(
+    /// Request body; `schema` adds `response_format` (OpenAI-style structured outputs, also accepted by LM Studio / vLLM / llama.cpp servers).
+    pub fn build_body(
         &self,
         msgs: &[Message],
         tools: &[ToolDef],
         stop: &[&str],
-    ) -> result::Result<Completion, LlmError> {
-        let messages: Vec<Value> = msgs.iter().map(
-            |message| match message.role {
-                "tool" => json!({"role": "tool", "tool_call_id": message.tool_call_id, "content": message.content}),
-                "assistant" if !message.tool_calls.is_empty() => json!({"role": "assistant", "content": if message.content.is_empty() { Value::Null } else { json!(message.content) },
-                "tool_calls": message.tool_calls.iter().map(|c| json!({"id": c.id, "type": "function", "function": {"name": c.name, "arguments": c.arguments.to_string()}})).collect::<Vec<_>>()}),
-                other => json!({"role": other, "content": message.content}),
+        schema: Option<&OutputSchema>,
+    ) -> Value {
+        let messages_parsed: Vec<Value> = msgs.iter().map(|msg| match msg.role {
+            "tool" => json!({"role": "tool", "tool_call_id": msg.tool_call_id, "content": msg.content}),
+            "assistant" if !msg.tool_calls.is_empty() => json!({"role": "assistant", "content": if msg.content.is_empty() { Value::Null } else { json!(msg.content) },
+                "tool_calls": msg.tool_calls.iter().map(|tool_call| json!({"id": tool_call.id, "type": "function", "function": {"name": tool_call.name, "arguments": tool_call.arguments.to_string()}})).collect::<Vec<_>>()}),
+            other => json!({"role": other, "content": msg.content}),
         }).collect();
 
-        let mut body = json!({"model": self.model, "messages": messages, "temperature": self.temperature, "stream": false});
-
-        if let Some(max_tokens) = self.max_tokens {
-            body["max_tokens"] = json!(max_tokens);
+        let mut body = json!({"model": self.model, "messages": messages_parsed, "temperature": self.temperature, "stream": false});
+        if let Some(t) = self.max_tokens {
+            body["max_tokens"] = json!(t);
         }
 
         if self.function_calling && !tools.is_empty() {
@@ -232,16 +248,23 @@ impl Llm for OpenAiCompat {
             body["stop"] = json!(stop);
         }
 
+        if let Some(sc) = schema {
+            body["response_format"] = json!({"type": "json_schema", "json_schema": {"name": sc.api_name(), "schema": sc.schema, "strict": false}});
+        }
+        body
+    }
+
+    fn send(&self, body: &Value) -> result::Result<Completion, LlmError> {
         let value = post_json(
             &format!("{}/chat/completions", self.base_url.trim_end_matches('/')),
             &[("Authorization", format!("Bearer {}", self.api_key))],
-            &body,
+            body,
             self.timeout_s,
         )?;
 
         let msg = value
             .pointer("/choices/0/message")
-            .ok_or_else(|| LlmError::Fatal("LLM response without options".into()))?;
+            .ok_or_else(|| LlmError::Fatal("LLM answer without choice".into()))?;
 
         let calls = msg
             .get("tool_calls")
@@ -250,21 +273,19 @@ impl Llm for OpenAiCompat {
                 array
                     .iter()
                     .enumerate()
-                    .map(|(index, tool_call)| ToolCall {
-                        id: tool_call
+                    .map(|(index, val_)| ToolCall {
+                        id: val_
                             .get("id")
                             .and_then(Value::as_str)
                             .map(String::from)
                             .unwrap_or_else(|| format!("call_{index}")),
-                        name: tool_call
+                        name: val_
                             .pointer("/function/name")
                             .and_then(Value::as_str)
                             .unwrap_or("")
                             .to_string(),
                         arguments: parse_args(
-                            tool_call
-                                .pointer("/function/arguments")
-                                .unwrap_or(&Value::Null),
+                            val_.pointer("/function/arguments").unwrap_or(&Value::Null),
                         ),
                     })
                     .collect()
@@ -279,6 +300,43 @@ impl Llm for OpenAiCompat {
                 .to_string(),
             tool_calls: calls,
         })
+    }
+}
+
+impl Llm for OpenAiCompat {
+    fn complete(
+        &self,
+        msgs: &[Message],
+        tools: &[ToolDef],
+        stop: &[&str],
+    ) -> result::Result<Completion, LlmError> {
+        self.send(&self.build_body(msgs, tools, stop, None))
+    }
+
+    fn complete_structured(
+        &self,
+        msgs: &[Message],
+        schema: &OutputSchema,
+    ) -> result::Result<Completion, LlmError> {
+        let plain = || self.send(&self.build_body(msgs, &[], &[], None));
+
+        if self.structured_output == "off"
+            || (self.structured_output == "auto" && self.schema_unsupported.load(Ordering::Relaxed))
+        {
+            return plain();
+        }
+
+        match self.send(&self.build_body(msgs, &[], &[], Some(schema))) {
+            // 400/422 = the server does not understand `response_format`: remember it (auto) and degrade to prompt + validation
+            Err(LlmError::Fatal(m))
+                if self.structured_output == "auto"
+                    && (m.contains("HTTP 400") || m.contains("HTTP 422")) =>
+            {
+                self.schema_unsupported.store(true, Ordering::Relaxed);
+                plain()
+            }
+            other => other,
+        }
     }
 
     fn native_tools(&self) -> bool {
@@ -307,31 +365,21 @@ pub struct Anthropic {
     pub max_tokens: u32,
     pub timeout_s: f64,
 }
-impl Llm for Anthropic {
-    fn complete(
-        &self,
-        msgs: &[Message],
-        tools: &[ToolDef],
-        _stop: &[&str],
-    ) -> std::result::Result<Completion, LlmError> {
-        let key = std::env::var(&self.key_env)
-            .ok()
-            .filter(|key| !key.is_empty())
-            .ok_or_else(|| LlmError::Fatal(format!("variable {} missing", self.key_env)))?;
 
+impl Anthropic {
+    fn convert(msgs: &[Message]) -> (String, Vec<Value>) {
         let system: String = msgs
             .iter()
-            .filter(|message| message.role == "system")
-            .map(|message| message.content.as_str())
+            .filter(|msg| msg.role == "system")
+            .map(|msg| msg.content.as_str())
             .collect::<Vec<_>>()
             .join("\n\n");
 
         let mut out: Vec<Value> = Vec::new();
-        for message in msgs.iter().filter(|message| message.role != "system") {
+        for message in msgs.iter().filter(|msg| msg.role != "system") {
             match message.role {
                 "tool" => {
                     let block = json!({"type": "tool_result", "tool_use_id": message.tool_call_id, "content": message.content});
-
                     match out.last_mut() {
                         Some(last)
                             if last["role"] == "user"
@@ -369,26 +417,46 @@ impl Llm for Anthropic {
                 _ => out.push(json!({"role": "user", "content": message.content})),
             }
         }
+        (system, out)
+    }
 
-        let mut body = json!({"model": self.model, "max_tokens": self.max_tokens, "system": system, "messages": out});
-        if !tools.is_empty() {
-            body["tools"] = json!(tools.iter().map(|tool| json!({"name": tool.name, "description": tool.description, "input_schema": tool.schema})).collect::<Vec<_>>());
-        }
+    fn call(&self, body: &Value) -> result::Result<Value, LlmError> {
+        let key = std::env::var(&self.key_env)
+            .ok()
+            .filter(|k| !k.is_empty())
+            .ok_or_else(|| LlmError::Fatal(format!("variable {} missing", self.key_env)))?;
 
-        let post = post_json(
+        post_json(
             "https://api.anthropic.com/v1/messages",
             &[
                 ("x-api-key", key),
                 ("anthropic-version", "2023-06-01".into()),
             ],
-            &body,
+            body,
             self.timeout_s,
-        )?;
+        )
+    }
+}
 
-        let blocks = post
+impl Llm for Anthropic {
+    fn complete(
+        &self,
+        msgs: &[Message],
+        tools: &[ToolDef],
+        _stop: &[&str],
+    ) -> result::Result<Completion, LlmError> {
+        let (system, out) = Self::convert(msgs);
+        let mut body = json!({"model": self.model, "max_tokens": self.max_tokens, "system": system, "messages": out});
+
+        if !tools.is_empty() {
+            body["tools"] = json!(tools.iter().map(|tool| json!({"name": tool.name, "description": tool.description, "input_schema": tool.schema})).collect::<Vec<_>>());
+        }
+
+        let value = self.call(&body)?;
+        let blocks = value
             .get("content")
             .and_then(Value::as_array)
-            .ok_or_else(|| LlmError::Fatal("Anthropic response with no content".into()))?;
+            .ok_or_else(|| LlmError::Fatal("Anthropic's answer without content".into()))?;
 
         let content = blocks
             .iter()
@@ -410,6 +478,39 @@ impl Llm for Anthropic {
         Ok(Completion {
             content,
             tool_calls: calls,
+        })
+    }
+
+    /// Constrained generation through a FORCED tool call whose `input_schema` is the output schema (the model cannot answer in prose).
+    fn complete_structured(
+        &self,
+        msgs: &[Message],
+        schema: &OutputSchema,
+    ) -> std::result::Result<Completion, LlmError> {
+        let (system, out) = Self::convert(msgs);
+        let body = json!({"model": self.model, "max_tokens": self.max_tokens, "system": system, "messages": out,
+            "tools": [{"name": "submit_result", "description": "Submit the final structured response.", "input_schema": schema.wrapped_for_tool()}],
+            "tool_choice": {"type": "tool", "name": "submit_result"}});
+
+        let value = self.call(&body)?;
+        let input = value
+            .get("content")
+            .and_then(Value::as_array)
+            .and_then(|array| array.iter().find(|block| block["type"] == "tool_use"))
+            .map(|block| block["input"].clone())
+            .ok_or_else(|| {
+                LlmError::Fatal("Anthropic's answer without call to structured tool".into())
+            })?;
+
+        let value = if schema.is_object_root() {
+            input
+        } else {
+            input.get("result").cloned().unwrap_or(Value::Null)
+        };
+
+        Ok(Completion {
+            content: value.to_string(),
+            tool_calls: vec![],
         })
     }
 
@@ -435,6 +536,9 @@ pub struct ScriptedLlm {
     pub script: Mutex<VecDeque<Completion>>,
     pub native: bool,
     pub seen: Mutex<Vec<Vec<Message>>>,
+    /// Answers for `complete_structured` (when empty, falls back to `script` like the trait default); `structured_seen` records schema names.
+    pub structured: Mutex<VecDeque<Completion>>,
+    pub structured_seen: Mutex<Vec<String>>,
 }
 
 impl ScriptedLlm {
@@ -443,7 +547,13 @@ impl ScriptedLlm {
             script: Mutex::new(script.into()),
             native,
             seen: Mutex::new(vec![]),
+            structured: Mutex::new(VecDeque::new()),
+            structured_seen: Mutex::new(vec![]),
         }
+    }
+    pub fn with_structured(self, answers: Vec<Completion>) -> Self {
+        *self.structured.lock().unwrap() = answers.into();
+        self
     }
 }
 
@@ -453,13 +563,35 @@ impl Llm for ScriptedLlm {
         msgs: &[Message],
         _t: &[ToolDef],
         _s: &[&str],
-    ) -> std::result::Result<Completion, LlmError> {
+    ) -> result::Result<Completion, LlmError> {
         self.seen.lock().unwrap().push(msgs.to_vec());
         self.script
             .lock()
             .unwrap()
             .pop_front()
-            .ok_or_else(|| LlmError::Fatal("script LLM épuisé".into()))
+            .ok_or_else(|| LlmError::Fatal("LLM script exhausted".into()))
+    }
+
+    fn complete_structured(
+        &self,
+        msgs: &[Message],
+        schema: &OutputSchema,
+    ) -> result::Result<Completion, LlmError> {
+        self.structured_seen
+            .lock()
+            .unwrap()
+            .push(schema.name.clone());
+        self.seen.lock().unwrap().push(msgs.to_vec());
+
+        match self.structured.lock().unwrap().pop_front() {
+            Some(completion) => Ok(completion),
+            None => self
+                .script
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| LlmError::Fatal("LLM script exhausted".into())),
+        }
     }
 
     fn native_tools(&self) -> bool {
@@ -491,7 +623,7 @@ pub fn build_llm(settings: &Settings, profile: Option<&str>) -> Result<Arc<dyn L
     let spec = settings.agents.default_llm.as_str();
     match spec.split_once('/') {
         Some(("anthropic", m)) => Ok(Arc::new(Anthropic { model: m.into(), key_env: "ANTHROPIC_API_KEY".into(), max_tokens: 4096, timeout_s: 300.0 })),
-        Some(("openai", m)) => Ok(Arc::new(OpenAiCompat { model: m.into(), base_url: "https://api.openai.com/v1".into(), api_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(), temperature: 0.2, max_tokens: None, timeout_s: 300.0, function_calling: true, context_window: 128_000 })),
+        Some(("openai", m)) => Ok(Arc::new(OpenAiCompat { model: m.into(), base_url: "https://api.openai.com/v1".into(), api_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(), temperature: 0.2, max_tokens: None, timeout_s: 300.0, function_calling: true, context_window: 128_000, structured_output: "auto".into(), schema_unsupported: AtomicBool::new(false) })),
         _ => Err(Error::config(format!("unsupported LLM provider: '{spec}' (define deployment.llm.profiles for an OpenAI-compatible server, or default_llm = anthropic/<model> | openai/<model>)"))),
     }
 }
