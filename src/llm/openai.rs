@@ -68,7 +68,7 @@ impl OpenAiCompat {
         }
 
         if let Some(sc) = schema {
-            body["response_format"] = json!({"type": "json_schema", "json_schema": {"name": sc.api_name(), "schema": sc.schema, "strict": false}});
+            body["response_format"] = json!({"type": "json_schema", "json_schema": {"name": sc.api_name(), "schema": sc.schema, "strict": true}});
         }
         body
     }
