@@ -1,6 +1,6 @@
 use agents_flow::{team::orchestrator::RunReport, util::clip};
 use std::fmt::Write as _;
-use std::io::{self, Write as _};
+use std::io::{self, IsTerminal, Write as _};
 
 fn render_report(report: &RunReport) -> String {
     let mut out = String::new();
@@ -79,10 +79,14 @@ fn render_report(report: &RunReport) -> String {
     out
 }
 
-fn write_with_crlf(s: &str) {
-    let normalized = s.replace("\r\n", "\n").replace('\n', "\r\n");
+fn write_output(raw_text: &str) {
     let mut stdout = io::stdout();
-    let _ = stdout.write_all(normalized.as_bytes());
+    if stdout.is_terminal() {
+        let normalized = raw_text.replace("\r\n", "\n").replace('\n', "\r\n");
+        let _ = stdout.write_all(normalized.as_bytes());
+    } else {
+        let _ = stdout.write_all(raw_text.as_bytes());
+    }
     let _ = stdout.flush();
 }
 
@@ -95,5 +99,5 @@ pub fn emit(report: &RunReport, json: bool) {
     } else {
         render_report(report)
     };
-    write_with_crlf(&output);
+    write_output(&output);
 }
