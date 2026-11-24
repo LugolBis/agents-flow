@@ -2,8 +2,9 @@
 use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::OnceLock;
 
 /// Null device for git config values (`core.hooksPath`, `GIT_CONFIG_GLOBAL`…).
 pub const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
@@ -332,6 +333,27 @@ pub fn read_up_to(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
     let mut buffer = Vec::new();
     fs::File::open(path)?.take(limit).read_to_end(&mut buffer)?;
     Ok(buffer)
+}
+
+fn is_tty() -> bool {
+    static TTY: OnceLock<bool> = OnceLock::new();
+    *TTY.get_or_init(|| io::stdout().is_terminal())
+}
+
+/// Erase the current `io::stdout` line and write the message on it
+pub fn progress(msg: &str) {
+    if !is_tty() {
+        return;
+    }
+    let mut out = io::stdout();
+    let _ = write!(out, "\r\x1b[2K{msg}");
+    let _ = out.flush();
+}
+
+pub fn progress_done() {
+    if is_tty() {
+        let _ = writeln!(io::stdout());
+    }
 }
 
 #[cfg(test)]
