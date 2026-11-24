@@ -1,15 +1,11 @@
 //! Structured outputs (JSON Schema): config loading, final-answer enforcement, repair loop, planner schema, OpenAI-compatible
 //! `response_format` negotiation (against a tiny local HTTP server) — all without a real model.
 use agents_flow::config::{models::deployment::LLMProfile, Settings};
-use agents_flow::engine::{core::Agent, models::TaskInput};
 use agents_flow::llm::{
-    core::{Completion, Llm, LlmError, Message, ToolCall},
-    mock::ScriptedLlm,
+    core::{Llm, LlmError, Message},
     openai::OpenAiCompat,
 };
 use agents_flow::schema::OutputSchema;
-use agents_flow::security::runtime::SecurityRuntime;
-use agents_flow::team::orchestrator::Orchestrator;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -59,19 +55,7 @@ fn config_with(
 fn load(dst: &Path, env: &HashMap<String, String>) -> agents_flow::error::Result<Settings> {
     Settings::load(Some(dst), Some(env), false)
 }
-fn text(s: &str) -> Completion {
-    Completion {
-        content: s.into(),
-        tool_calls: vec![],
-    }
-}
-fn task() -> TaskInput {
-    TaskInput {
-        description: "do it".into(),
-        expected: "json".into(),
-        context: vec![],
-    }
-}
+
 fn full_patch(s: String) -> String {
     s.replace(REPORT_REF, &REPORT_REF.replace("// ", ""))
         .replace(EDITOR_ANCHOR, &format!("{EDITOR_ANCHOR}{EDITOR_SCHEMA}"))
