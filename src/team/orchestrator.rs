@@ -20,7 +20,7 @@ use crate::llm::core::{build_llm, Llm};
 use crate::schema::OutputSchema;
 use crate::security::{audit::Event, runtime::ToolHost};
 use crate::team::plan::plan_schema;
-use crate::util::clip;
+use crate::util::{clip, progress, progress_done};
 use std::collections::{BTreeMap, HashMap};
 use std::result;
 use std::sync::Arc;
@@ -234,7 +234,16 @@ impl Orchestrator {
     pub fn plan_and_validate(&self, request: &str) -> result::Result<Plan, String> {
         let mut feedback: Option<String> = None;
 
-        for _ in 0..=self.cfg.max_replans {
+        for index in 0..=self.cfg.max_replans {
+            progress(
+                format!(
+                    "Orchestrator is planning... [{}/{}]",
+                    index + 1,
+                    self.cfg.max_replans
+                )
+                .as_str(),
+            );
+
             match self.propose_plan(request, feedback.as_deref()) {
                 Err(e) => feedback = Some(e),
                 Ok(plan) => {
@@ -279,10 +288,21 @@ impl Orchestrator {
         let start = self.host.audit().len();
         let mut results: Vec<(String, String)> = Vec::new();
 
-        for step in &plan.steps {
+        for (index, step) in plan.steps.iter().enumerate() {
+            progress(
+                format!(
+                    "Step [{}/{}] : Agent '{}' is processing...",
+                    index + 1,
+                    plan.steps.len(),
+                    step.agent
+                )
+                .as_str(),
+            );
+
             let guard = match self.guard(&step.agent, extra.get(&step.id)) {
                 Ok(g) => g,
                 Err(e) => {
+                    progress_done();
                     report.error = Some(format!("ConfigError: {e}"));
                     break;
                 }
@@ -309,6 +329,7 @@ impl Orchestrator {
             ) {
                 Ok(text) => results.push((step.id.clone(), text)),
                 Err(err) => {
+                    progress_done();
                     report.error = Some(format!("{}: {}", err.kind(), clip(&err.to_string(), 300)));
                     break;
                 }
@@ -335,11 +356,17 @@ impl Orchestrator {
                     report.final_text = text;
                 }
                 Ok(Err(err)) => {
+                    progress_done();
                     report.error = Some(format!("{}: {}", err.kind(), clip(&err.to_string(), 300)))
                 }
-                Err(err) => report.error = Some(format!("ConfigError: {err}")),
+                Err(err) => {
+                    progress_done();
+                    report.error = Some(format!("ConfigError: {err}"))
+                }
             }
         }
+
+        progress_done();
 
         for step in &plan.steps {
             if !results.iter().any(|(id, _)| *id == step.id) {

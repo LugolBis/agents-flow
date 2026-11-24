@@ -10,12 +10,21 @@ use super::{
     skill::{load_skills, Skill},
 };
 
-use crate::error::{Error, Result};
-use crate::llm::core::{Llm, Message, ToolCall};
-use crate::security::runtime::{ToolDef, ToolHost};
 use crate::{
     config::{models::agents::AgentSpec, Settings},
     schema::OutputSchema,
+};
+use crate::{
+    error::{Error, Result},
+    util::progress,
+};
+use crate::{
+    llm::core::{Llm, Message, ToolCall},
+    util::random_agent_verb,
+};
+use crate::{
+    security::runtime::{ToolDef, ToolHost},
+    util::progress_done,
 };
 
 use std::sync::{Arc, Mutex};
@@ -137,19 +146,35 @@ impl Agent {
         ];
 
         for attempt in 0..=retries {
+            progress(
+                format!(
+                    "Attempt [{}/{}] : Agent {} is {}...",
+                    attempt + 1,
+                    retries,
+                    self.id,
+                    random_agent_verb()
+                )
+                .as_str(),
+            );
+
             let mut out = self.run_loop(host, &mut msgs, delegate)?;
             if let Some(sc) = &schema {
                 match self.enforce_schema(&msgs, &out, sc) {
                     Ok(canonical) => out = canonical,
                     Err(AgentError::Schema(fb)) if attempt >= retries => {
-                        return Err(AgentError::Schema(fb))
+                        progress_done();
+                        return Err(AgentError::Schema(fb));
                     }
                     Err(AgentError::Schema(fb)) => {
+                        progress_done();
                         msgs.push(Message::assistant(out, vec![]));
                         msgs.push(Message::user(format!("Your answer was rejected by an automatic verification : {fb}\nCorrect it and generate the complete final answer.")));
                         continue;
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        progress_done();
+                        return Err(e);
+                    }
                 }
             }
 
@@ -159,14 +184,19 @@ impl Agent {
 
             match guard_fn(&out) {
                 Ok(()) => return Ok(out),
-                Err(fb) if attempt >= retries => return Err(AgentError::Guardrail(fb)),
+                Err(fb) if attempt >= retries => {
+                    progress_done();
+                    return Err(AgentError::Guardrail(fb));
+                }
                 Err(fb) => {
+                    progress_done();
                     msgs.push(Message::assistant(out, vec![]));
                     msgs.push(Message::user(format!("Your answer was rejected by an automatic verification : {fb}\nCorrect it and generate the complete final answer.")));
                 }
             }
         }
 
+        progress_done();
         Err(AgentError::Guardrail("reached the retry limit".into()))
     }
 }
