@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
 /// Null device for git config values (`core.hooksPath`, `GIT_CONFIG_GLOBAL`…).
@@ -354,6 +355,23 @@ pub fn progress_done() {
     if is_tty() {
         let _ = writeln!(io::stdout());
     }
+}
+
+pub fn random_agent_verb() -> &'static str {
+    const VERBS: &[&str] = &[
+        "processing",
+        "thinking",
+        "reasoning",
+        "analyzing",
+        "computing",
+        "planning",
+        "reflecting",
+        "pondering",
+        "evaluating",
+        "deliberating",
+    ];
+    static I: AtomicUsize = AtomicUsize::new(0);
+    VERBS[I.fetch_add(1, Ordering::Relaxed) % VERBS.len()]
 }
 
 #[cfg(test)]
