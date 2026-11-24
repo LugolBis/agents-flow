@@ -1,0 +1,66 @@
+name: CI/CD
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'README.md'
+      - '.github/workflows/CICD.yml'
+jobs:
+  test-agents-flow:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          # --- Ubuntu (x64) ---
+          - ubuntu-latest
+          - ubuntu-24.04
+          - ubuntu-22.04
+          # --- Windows (x64) ---
+          - windows-latest
+          - windows-2025
+          # --- Windows ARM64 ---
+          - windows-11-arm   # Windows 11 ARM64 natif
+          # --- Ubuntu ARM64 (optionnel, pour tests multi-arch) ---
+          - ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify README path
+        shell: bash
+        run: |
+          if [ ! -f "README.md" ]; then
+            echo "ERROR: README.md not found at project root"
+            exit 1
+          fi
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+
+      - name: Test usage
+        run: cargo test --verbose
+        
+  publish-agents-flow:
+    runs-on: ubuntu-latest
+    needs: test-agents-flow
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          cargo publish
