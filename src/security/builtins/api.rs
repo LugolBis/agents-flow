@@ -113,7 +113,13 @@ mod tests {
             &["-P", &s(&b), "-maxdepth", "3", "-name", "*.py"],
         )
         .text;
+
+        #[cfg(unix)]
         assert_eq!(f.trim(), s(&b.join("sub/b.py")));
+
+        #[cfg(not(unix))]
+        assert_eq!(f.trim(), s(&b.join("sub\\b.py")));
+
         let f = run(
             &g,
             &b,

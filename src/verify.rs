@@ -535,7 +535,7 @@ pub fn render(results: &[VResult]) -> String {
         |s: &str, n: usize| format!("{s}{}", " ".repeat(n.saturating_sub(s.chars().count())));
 
     let mut lines = vec![format!(
-        "{}  {}  Résult",
+        "{}  {}  Result",
         fn_pad("Scenario", width),
         fn_pad("Expected", 28)
     )];
