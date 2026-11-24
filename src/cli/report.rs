@@ -1,13 +1,18 @@
 use agents_flow::{team::orchestrator::RunReport, util::clip};
+use std::fmt::Write as _;
+use std::io::{self, Write as _};
 
-fn print_report(report: &RunReport) {
-    println!("=== mode : {} ===\n{}\n", report.mode, report.request);
+fn render_report(report: &RunReport) -> String {
+    let mut out = String::new();
+
+    let _ = writeln!(out, "=== Mode : {} ===\n{}\n", report.mode, report.request);
 
     if let Some(plan) = &report.plan {
-        println!("Plan : {}", plan.goal);
+        let _ = writeln!(out, "Plan : {}", plan.goal);
 
         for step in &plan.steps {
-            println!(
+            let _ = writeln!(
+                out,
                 "  [{}] {} ← {:?}\n      {}",
                 step.id,
                 step.agent,
@@ -15,7 +20,7 @@ fn print_report(report: &RunReport) {
                 clip(&step.instruction, 160)
             );
         }
-        println!();
+        let _ = writeln!(out, "\n");
     }
 
     for (id, text) in &report.step_results {
@@ -25,23 +30,25 @@ fn print_report(report: &RunReport) {
             .find(|(id_, _)| id_ == id)
             .map(|(_, value_)| serde_json::to_string_pretty(value_).unwrap_or_default())
             .unwrap_or_else(|| text.clone());
-        println!("--- step {id} ---\n{}\n", clip(&shown, 1500));
+        let _ = writeln!(out, "--- step {id} ---\n{}\n", clip(&shown, 1500));
     }
 
     if let Some(value_) = &report.final_json {
-        println!(
+        let _ = writeln!(
+            out,
             "--- Final result (JSON conforming to the schema) ---\n{}\n",
             serde_json::to_string_pretty(value_).unwrap_or_default()
         );
     } else if !report.final_text.is_empty() {
-        println!("--- Final result ---\n{}\n", report.final_text);
+        let _ = writeln!(out, "--- Final result ---\n{}\n", report.final_text);
     }
 
     for warning in &report.warnings {
-        println!("[ WARNING ] {warning}");
+        let _ = writeln!(out, "[ WARNING ] {warning}");
     }
 
-    println!(
+    let _ = writeln!(
+        out,
         "Audit : {}",
         if report.audit.is_empty() {
             "(no event)".to_string()
@@ -56,35 +63,37 @@ fn print_report(report: &RunReport) {
     );
 
     for denial in &report.denials {
-        println!(
-            "  REFUSAL {} / {} : {}",
-            denial
-                .get("agent")
-                .and_then(|value| value.as_str())
-                .unwrap_or("?"),
-            denial
-                .get("tool")
-                .and_then(|value| value.as_str())
-                .unwrap_or("?"),
-            denial
-                .get("code")
-                .and_then(|value| value.as_str())
-                .unwrap_or("?")
+        let _ = writeln!(
+            out,
+            "REFUSAL {} / {} : {}",
+            denial.get("agent").and_then(|v| v.as_str()).unwrap_or("?"),
+            denial.get("tool").and_then(|v| v.as_str()).unwrap_or("?"),
+            denial.get("code").and_then(|v| v.as_str()).unwrap_or("?")
         );
     }
 
     if let Some(err) = &report.error {
-        println!("\n✘ ERROR : {err}");
+        let _ = writeln!(out, "\n✘ ERROR : {err}");
     }
+
+    out
+}
+
+fn write_with_crlf(s: &str) {
+    let normalized = s.replace("\r\n", "\n").replace('\n', "\r\n");
+    let mut stdout = io::stdout();
+    let _ = stdout.write_all(normalized.as_bytes());
+    let _ = stdout.flush();
 }
 
 pub fn emit(report: &RunReport, json: bool) {
-    if json {
-        println!(
-            "{}",
+    let output = if json {
+        format!(
+            "{}\n",
             serde_json::to_string_pretty(&report.to_json()).unwrap_or_default()
-        );
+        )
     } else {
-        print_report(report);
-    }
+        render_report(report)
+    };
+    write_with_crlf(&output);
 }
